@@ -24,26 +24,22 @@
 namespace OCA\Richdocuments\Db;
 
 use OCP\AppFramework\Db\DoesNotExistException;
-use OCP\AppFramework\Db\Mapper;
+use OCP\AppFramework\Db\QBMapper;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\IDBConnection;
 use OCP\Security\ISecureRandom;
-use PhpParser\Node\Scalar\MagicConst\Dir;
 
-class DirectMapper extends Mapper {
+/** @template-extends QBMapper<Direct> */
+class DirectMapper extends QBMapper {
+	/** @var int Lifetime of a token is 10 minutes */
+	public const TOKEN_TTL = 600;
 
-	/** @var int Limetime of a token is 10 minutes */
-	const tokenLifeTime = 600;
-
-	/** @var ISecureRandom */
-	protected $random;
-
-	/**@var ITimeFactory */
-	protected $timeFactory;
+	protected ISecureRandom $random;
+	protected ITimeFactory $timeFactory;
 
 	public function __construct(IDBConnection $db,
-								ISecureRandom $random,
-								ITimeFactory $timeFactory) {
+		ISecureRandom $random,
+		ITimeFactory $timeFactory) {
 		parent::__construct($db, 'richdocuments_direct', Direct::class);
 
 		$this->random = $random;
@@ -67,36 +63,29 @@ class DirectMapper extends Mapper {
 		$direct->setInitiatorHost($initiatorHost);
 		$direct->setInitiatorToken($initiatorToken);
 
-		$direct = $this->insert($direct);
-		return $direct;
+		return $this->insert($direct);
 	}
 
 	/**
-	 * @param string $token
-	 * @return Direct
+	 * @throws DoesNotExistException
 	 */
-	public function getByToken($token) {
+	public function getByToken(string $token): Direct {
 		$qb = $this->db->getQueryBuilder();
 		$qb->select('*')
 			->from('richdocuments_direct')
 			->where($qb->expr()->eq('token', $qb->createNamedParameter($token)));
 
-		$cursor = $qb->execute();
-		$row = $cursor->fetch();
-		$cursor->closeCursor();
+		try {
+			$direct = $this->findEntity($qb);
+			if (($direct->getTimestamp() + self::TOKEN_TTL) < $this->timeFactory->getTime()) {
+				$this->delete($direct);
+				throw new DoesNotExistException('Could not find token.');
+			}
 
-		//There can only be one as the token is unique
-		if ($row === false) {
-			throw new DoesNotExistException('Could not find token.');
+			return $direct;
+		} catch (\Exception $e) {
 		}
 
-		$direct = Direct::fromRow($row);
-
-		if (($direct->getTimestamp() + self::tokenLifeTime) < $this->timeFactory->getTime()) {
-			$this->delete($direct);
-			throw new DoesNotExistException('Could not find token.');
-		}
-
-		return $direct;
+		throw new DoesNotExistException('No asset for token found');
 	}
 }

@@ -22,6 +22,8 @@
  */
 namespace OCA\Richdocuments\Controller;
 
+use OCA\Richdocuments\Exceptions\ExpiredTokenException;
+use OCA\Richdocuments\Exceptions\UnknownTokenException;
 use OCP\AppFramework\Db\DoesNotExistException;
 use OCP\AppFramework\OCS\OCSNotFoundException;
 use OCP\AppFramework\OCSController;
@@ -34,7 +36,6 @@ use OCP\IURLGenerator;
 use OCP\IUserManager;
 
 class FederationController extends OCSController {
-
 	/** @var IConfig */
 	private $config;
 
@@ -60,7 +61,7 @@ class FederationController extends OCSController {
 		IURLGenerator $urlGenerator
 	) {
 		parent::__construct($appName, $request);
-		$this->config   = $config;
+		$this->config = $config;
 		$this->logger = $logger;
 		$this->wopiMapper = $wopiMapper;
 		$this->userManager = $userManager;
@@ -107,14 +108,17 @@ class FederationController extends OCSController {
 				$initiatorWopi->setGuestDisplayname($initiatorUser['displayName']);
 			} else {
 				$user = $this->userManager->get($initiatorWopi->getEditorUid());
-				if($user !== null) {
+				if ($user !== null) {
 					$initiatorWopi->setGuestDisplayname($user->getDisplayName());
 				}
 			}
 			$this->logger->debug('COOL-Federation-Initiator: Token ' . $token . ' returned');
 			return new DataResponse($initiatorWopi);
-		} catch (DoesNotExistException $e) {
+		} catch (UnknownTokenException $e) {
 			$this->logger->debug('COOL-Federation-Initiator: Token ' . $token . 'not found');
+			throw new OCSNotFoundException();
+		} catch (ExpiredTokenException $e) {
+			$this->logger->debug('COOL-Federation-Initiator: Token ' . $token . ' is expired');
 			throw new OCSNotFoundException();
 		}
 	}
@@ -130,13 +134,13 @@ class FederationController extends OCSController {
 	 *
 	 * @param $token
 	 * @return DataResponse
-	 * @throws DoesNotExistException
+	 * @throws OCSNotFoundException
 	 */
 	public function initiatorUser($token): DataResponse {
 		try {
 			$wopi = $this->wopiMapper->getWopiForToken($token);
 			$user = $this->userManager->get($wopi->getEditorUid());
-			if($user !== null) {
+			if ($user !== null) {
 				$wopi->setGuestDisplayname($user->getDisplayName());
 			}
 			$this->logger->debug('COOL-Federation-Initiator-User: Token ' . $token . ' returned');
@@ -145,10 +149,12 @@ class FederationController extends OCSController {
 				'displayName' => $user->getDisplayName(),
 				'avatar' => $this->urlGenerator->linkToRouteAbsolute('core.avatar.getAvatar', ['userId' => $wopi->getEditorUid(), 'size' => WopiController::WOPI_AVATAR_SIZE])
 			]);
-		} catch (DoesNotExistException $e) {
+		} catch (UnknownTokenException $e) {
 			$this->logger->debug('COOL-Federation-Initiator-User: Token ' . $token . 'not found');
+			throw new OCSNotFoundException();
+		} catch (ExpiredTokenException $e) {
+			$this->logger->debug('COOL-Federation-Initiator-User: Token ' . $token . ' is expired.');
 			throw new OCSNotFoundException();
 		}
 	}
-
 }

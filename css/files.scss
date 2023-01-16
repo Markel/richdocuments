@@ -1,24 +1,8 @@
-#odf-canvas{
-	position: relative;
-	top: 37px;
-	left: 0px;
-	border:1px solid darkgray;
-	border-left:0 none;
-	box-shadow: 0px 4px 10px #000;
-	-moz-box-shadow: 0px 4px 10px #000;
-	-webkit-box-shadow: 0px 4px 10px #000;
-}
-
-.icon-filetype-document{
-	background-image: url('../img/x-office-document.svg')
-}
-
-.icon-filetype-spreadsheet{
-	background-image: url('../img/x-office-spreadsheet.svg');
-}
-
-.icon-filetype-presentation{
-	background-image: url('../img/x-office-presentation.svg');
+.icon-collabora {
+	opacity: 0.6;
+	&:hover {
+		opacity: 1;
+	}
 }
 
 .richdocuments-sharing .icon-shared {
@@ -37,11 +21,17 @@
 #richdocumentsframe {
 	background-color: #fff;
 	width:100%;
-	height: calc(100vh - 50px);
+	height: calc(100vh - 50px + 3px);
 	display:block;
 	position:absolute;
-	top:0;
+	top: -3px;
+	left: 0;
 	z-index:110;
+	&.full {
+		height: 100%;
+		position: fixed;
+		z-index: 2001; // Above app-content
+	}
 }
 
 #editors-menu {

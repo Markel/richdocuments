@@ -20,8 +20,8 @@
  *
  */
 
-import { getRootUrl } from '@nextcloud/router'
-import { languageToBCP47 } from './index'
+import { getRootUrl, generateUrl } from '@nextcloud/router'
+import { languageToBCP47 } from './index.js'
 import Config from './../services/config.tsx'
 
 const getSearchParam = (name) => {
@@ -33,6 +33,9 @@ const getSearchParam = (name) => {
 }
 
 const getWopiUrl = ({ fileId, title, readOnly, closeButton, revisionHistory }) => {
+	// Only set the revision history parameter if the versions app is enabled
+	revisionHistory = revisionHistory && window?.oc_appswebroots?.files_versions
+
 	// WOPISrc - URL that loolwsd will access (ie. pointing to ownCloud)
 	// index.php is forced here to avoid different wopi srcs for the same document
 	const wopiurl = window.location.protocol + '//' + window.location.host + getRootUrl() + '/index.php/apps/richdocuments/wopi/files/' + fileId
@@ -53,7 +56,7 @@ const getWopiUrl = ({ fileId, title, readOnly, closeButton, revisionHistory }) =
 }
 
 const getDocumentUrlFromTemplate = (templateId, fileName, fileDir, fillWithTemplate) => {
-	return OC.generateUrl(
+	return generateUrl(
 		'apps/richdocuments/indexTemplate?templateId={templateId}&fileName={fileName}&dir={dir}&requesttoken={requesttoken}',
 		{
 			templateId,
@@ -65,7 +68,7 @@ const getDocumentUrlFromTemplate = (templateId, fileName, fileDir, fillWithTempl
 }
 
 const getDocumentUrlForPublicFile = (fileName, fileId) => {
-	return OC.generateUrl(
+	return generateUrl(
 		'apps/richdocuments/public?shareToken={shareToken}&fileName={fileName}&requesttoken={requesttoken}&fileId={fileId}',
 		{
 			shareToken: document.getElementById('sharingToken').value,
@@ -77,13 +80,17 @@ const getDocumentUrlForPublicFile = (fileName, fileId) => {
 }
 
 const getDocumentUrlForFile = (fileDir, fileId) => {
-	return OC.generateUrl(
+	return generateUrl(
 		'apps/richdocuments/index?fileId={fileId}&requesttoken={requesttoken}',
 		{
 			fileId,
 			dir: fileDir,
 			requesttoken: OC.requestToken,
 		})
+}
+
+const getNextcloudUrl = () => {
+	return window.location.host
 }
 
 export {
@@ -93,4 +100,5 @@ export {
 	getDocumentUrlFromTemplate,
 	getDocumentUrlForPublicFile,
 	getDocumentUrlForFile,
+	getNextcloudUrl,
 }

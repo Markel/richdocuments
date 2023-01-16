@@ -1,4 +1,5 @@
 module.exports = {
+	root: true,
 	globals: {
 		t: true,
 		n: true,
@@ -10,5 +11,9 @@ module.exports = {
 	},
 	extends: [
 		'@nextcloud',
+		'plugin:cypress/recommended',
 	],
+	env: {
+		'cypress/globals': true
+	},
 }

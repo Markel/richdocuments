@@ -1,11 +1,20 @@
 {
 	"name": "nextcloud/richdocuments",
 	"type": "project",
+	"minimum-stability": "dev",
+	"prefer-stable": true,
+	"config": {
+		"platform": {
+			"php": "7.4"
+		}
+	},
 	"require-dev": {
 		"roave/security-advisories": "dev-master",
-		"christophwurst/nextcloud": "^21.0",
 		"jakub-onderka/php-parallel-lint": "^1.0.0",
-		"psalm/phar": "^4.7"
+		"psalm/phar": "^5.3",
+		"friendsofphp/php-cs-fixer": "^3.8",
+		"nextcloud/coding-standard": "^1.0",
+		"nextcloud/ocp": "dev-master"
 	},
 	"license": "AGPLv3",
 	"authors": [
@@ -17,6 +26,13 @@
 	"scripts": {
 		"lint": "find . -name \\*.php -not -path './vendor/*' -print0 | xargs -0 -n1 php -l",
 		"psalm": "psalm.phar",
-		"psalm:fix": "psalm.phar --alter --issues=InvalidReturnType,InvalidNullableReturnType,MismatchingDocblockParamType,MismatchingDocblockReturnType,MissingParamType,InvalidFalsableReturnType"
+		"psalm:fix": "psalm.phar --alter --issues=InvalidReturnType,InvalidNullableReturnType,MismatchingDocblockParamType,MismatchingDocblockReturnType,MissingParamType,InvalidFalsableReturnType",
+		"cs:check": "php-cs-fixer fix --dry-run --diff",
+		"cs:fix": "php-cs-fixer fix"
+	},
+	"autoload-dev": {
+		"psr-4": {
+			"OCP\\": "vendor/nextcloud/ocp/OCP"
+		}
 	}
 }

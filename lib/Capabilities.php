@@ -23,17 +23,21 @@
 
 namespace OCA\Richdocuments;
 
+use OCP\App\IAppManager;
 use OCA\Richdocuments\Service\CapabilitiesService;
 use OCP\Capabilities\ICapability;
 use OCP\IL10N;
 
 class Capabilities implements ICapability {
-
-	const MIMETYPES = [
+	public const MIMETYPES = [
 		'application/vnd.oasis.opendocument.text',
 		'application/vnd.oasis.opendocument.spreadsheet',
 		'application/vnd.oasis.opendocument.graphics',
 		'application/vnd.oasis.opendocument.presentation',
+		'application/vnd.oasis.opendocument.text-flat-xml',
+		'application/vnd.oasis.opendocument.spreadsheet-flat-xml',
+		'application/vnd.oasis.opendocument.graphics-flat-xml',
+		'application/vnd.oasis.opendocument.presentation-flat-xml',
 		'application/vnd.lotus-wordpro',
 		'application/vnd.visio',
 		'application/vnd.ms-visio.drawing',
@@ -64,7 +68,7 @@ class Capabilities implements ICapability {
 		'text/csv'
 	];
 
-	const MIMETYPES_OPTIONAL = [
+	public const MIMETYPES_OPTIONAL = [
 		'image/svg+xml',
 		'application/pdf',
 		'text/plain',
@@ -77,27 +81,55 @@ class Capabilities implements ICapability {
 	private $config;
 	/** @var CapabilitiesService */
 	private $capabilitiesService;
+	/** @var PermissionManager */
+	private $permissionManager;
+	/** @var IAppManager */
+	private $appManager;
+	private ?string $userId = null;
 
 	private $capabilities = null;
 
-	public function __construct(IL10N $l10n, AppConfig $config, CapabilitiesService $capabilitiesService) {
+	public function __construct(IL10N $l10n, AppConfig $config, CapabilitiesService $capabilitiesService, PermissionManager $permissionManager, IAppManager $appManager, ?string $userId) {
 		$this->l10n = $l10n;
 		$this->config = $config;
 		$this->capabilitiesService = $capabilitiesService;
+		$this->permissionManager = $permissionManager;
+		$this->appManager = $appManager;
+		$this->userId = $userId;
 	}
 
 	public function getCapabilities() {
+		// Only expose capabilities for users with enabled office or guests (where it depends on the share owner if they have access)
+		if (!$this->permissionManager->isEnabledForUser() && $this->userId !== null) {
+			return [];
+		}
+
 		if (!$this->capabilities) {
 			$collaboraCapabilities = $this->capabilitiesService->getCapabilities();
+			$filteredMimetypes = self::MIMETYPES;
+			$optionalMimetypes = self::MIMETYPES_OPTIONAL;
+			// If version is too old, draw is not supported
+			if (!$this->capabilitiesService->hasDrawSupport()) {
+				$filteredMimetypes = array_diff($filteredMimetypes, [
+					'application/vnd.oasis.opendocument.graphics',
+					'application/vnd.oasis.opendocument.graphics-flat-xml',
+				]);
+			}
+
+			if (!$this->appManager->isEnabledForUser('files_pdfviewer')) {
+				$filteredMimetypes[] = 'application/pdf';
+				$optionalMimetypes = array_diff($optionalMimetypes, ['application/pdf']);
+			}
+
 			$this->capabilities = [
 				'richdocuments' => [
 					'version' => \OC::$server->getAppManager()->getAppVersion('richdocuments'),
-					'mimetypes' => self::MIMETYPES,
-					'mimetypesNoDefaultOpen' => self::MIMETYPES_OPTIONAL,
+					'mimetypes' => array_values($filteredMimetypes),
+					'mimetypesNoDefaultOpen' => array_values($optionalMimetypes),
 					'collabora' => $collaboraCapabilities,
 					'direct_editing' => isset($collaboraCapabilities['hasMobileSupport']) ?: false,
 					'templates' => isset($collaboraCapabilities['hasTemplateSaveAs']) || isset($collaboraCapabilities['hasTemplateSource']) ?: false,
-					'productName' => isset($collaboraCapabilities['productName']) ? $collaboraCapabilities['productName'] : $this->l10n->t('Collabora Online'),
+					'productName' => $this->capabilitiesService->getProductName(),
 					'config' => [
 						'wopi_url' => $this->config->getAppValue('wopi_url'),
 						'public_wopi_url' => $this->config->getAppValue('public_wopi_url'),

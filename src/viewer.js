@@ -4,7 +4,7 @@
  * @author Viktar Dubiniuk <dubiniuk@owncloud.com>
  * @author Julius Härtl <jus@bitgrid.net>
  *
- * @license GNU AGPL version 3 or any later version
+ * @license AGPL-3.0-or-later
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -21,26 +21,45 @@
  *
  */
 
-import Office from './view/Office'
+import '../css/filetypes.scss'
+
+import Office from './view/Office.vue'
 import { getCapabilities } from '@nextcloud/capabilities'
 
 const supportedMimes = getCapabilities().richdocuments.mimetypes
 
-document.addEventListener('DOMContentLoaded', function(event) {
-	// Only use it outside the files app for now
-	if (typeof OCA !== 'undefined'
-		&& typeof OCA.Files !== 'undefined'
-		&& typeof OCA.Files.fileActions !== 'undefined'
-	) {
-		return
-	}
+if (OCA.Viewer) {
+	OCA.Viewer.registerHandler({
+		id: 'richdocuments',
+		group: null,
+		mimes: supportedMimes,
+		component: Office,
+		theme: 'light',
+	})
+}
 
-	if (OCA.Viewer) {
-		OCA.Viewer.registerHandler({
-			id: 'richdocuments',
-			group: null,
-			mimes: supportedMimes,
-			component: Office,
-		})
+// TODO: Viewer.openWith introduced with https://github.com/nextcloud/viewer/pull/1273
+//       This check can be replaced with `if(OCA.Viewer)` once NC 24 is EOL.
+if (OCA.Viewer.openWith && OCA?.Files?.fileActions) {
+	const supportedMimes = getCapabilities().richdocuments.mimetypesNoDefaultOpen
+	const actionName = 'Edit with ' + getCapabilities().richdocuments.productName
+	const actionDisplayNameEdit = t('richdocuments', 'Edit with {productName}', { productName: getCapabilities().richdocuments.productName }, undefined, { escape: false })
+	const actionDisplayNameOpen = t('richdocuments', 'Open with {productName}', { productName: getCapabilities().richdocuments.productName }, undefined, { escape: false })
+
+	for (const mime of supportedMimes) {
+		const action = {
+			name: actionName,
+			mime,
+			permissions: OC.PERMISSION_READ,
+			iconClass: 'icon-richdocuments',
+			displayName: mime === 'application/pdf' ? actionDisplayNameOpen : actionDisplayNameEdit,
+			actionHandler: (fileName, context) => {
+				OCA.Viewer.openWith('richdocuments', {
+					path: context.fileInfoModel.getFullPath(),
+				})
+			},
+		}
+
+		OCA.Files.fileActions.registerAction(action)
 	}
-})
+}

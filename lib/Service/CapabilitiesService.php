@@ -23,14 +23,16 @@
 
 namespace OCA\Richdocuments\Service;
 
+use OCA\Richdocuments\AppInfo\Application;
 use OCP\App\IAppManager;
 use OCP\Http\Client\IClientService;
 use OCP\ICache;
 use OCP\ICacheFactory;
 use OCP\IConfig;
+use OCP\IL10N;
+use Psr\Log\LoggerInterface;
 
 class CapabilitiesService {
-
 	/** @var IConfig */
 	private $config;
 	/** @var IClientService */
@@ -39,16 +41,22 @@ class CapabilitiesService {
 	private $cache;
 	/** @var IAppManager */
 	private $appManager;
+	/** @var IL10N */
+	private $l10n;
+	/** @var LoggerInterface */
+	private $logger;
 
 	/** @var array */
 	private $capabilities;
 
 
-	public function __construct(IConfig $config, IClientService $clientService, ICacheFactory $cacheFactory, IAppManager $appManager) {
+	public function __construct(IConfig $config, IClientService $clientService, ICacheFactory $cacheFactory, IAppManager $appManager, IL10N $l10n, LoggerInterface $logger) {
 		$this->config = $config;
 		$this->clientService = $clientService;
 		$this->cache = $cacheFactory->createDistributed('richdocuments');
 		$this->appManager = $appManager;
+		$this->l10n = $l10n;
+		$this->logger = $logger;
 	}
 
 	public function getCapabilities() {
@@ -61,7 +69,7 @@ class CapabilitiesService {
 		$isCODEInstalled = $this->appManager->isEnabledForUser($CODEAppID);
 		$isCODEEnabled = strpos($this->config->getAppValue('richdocuments', 'wopi_url'), 'proxy.php?req=') !== false;
 		$shouldRecheckCODECapabilities = $isCODEInstalled && $isCODEEnabled && ($this->capabilities === null || count($this->capabilities) === 0);
-		if($this->capabilities === null || $shouldRecheckCODECapabilities) {
+		if ($this->capabilities === null || $shouldRecheckCODECapabilities) {
 			$this->refetch();
 		}
 
@@ -72,22 +80,46 @@ class CapabilitiesService {
 		return $this->capabilities;
 	}
 
-	public function hasTemplateSaveAs() {
+	public function hasNextcloudBranding(): bool {
+		$productVersion = $this->getCapabilities()['productVersion'] ?? '0.0.0.0';
+		return version_compare($productVersion, '21.11', '>=');
+	}
+
+	public function hasDrawSupport(): bool {
+		$productVersion = $this->getCapabilities()['productVersion'] ?? '0.0.0.0';
+		return version_compare($productVersion, '6.4.7', '>=');
+	}
+
+	public function hasTemplateSaveAs(): bool {
 		return $this->getCapabilities()['hasTemplateSaveAs'] ?? false;
 	}
 
-	public function hasTemplateSource() {
+	public function hasTemplateSource(): bool {
 		return $this->getCapabilities()['hasTemplateSource'] ?? false;
 	}
 
-	public function clear() {
+	public function hasZoteroSupport(): bool {
+		return $this->getCapabilities()['hasZoteroSupport'] ?? false;
+	}
+
+	public function getProductName(): string {
+		$theme = $this->config->getAppValue(Application::APPNAME, 'theme', 'nextcloud');
+
+		if (isset($this->capabilitites['productName']) && $theme !== 'nextcloud') {
+			return $this->capabilitites['productName'];
+		}
+
+		return $this->l10n->t('Nextcloud Office');
+	}
+
+	public function clear(): void {
 		$this->cache->remove('capabilities');
 	}
 
-	public function refetch() {
+	public function refetch(): void {
 		$remoteHost = $this->config->getAppValue('richdocuments', 'wopi_url');
 		if ($remoteHost === '') {
-			return [];
+			return;
 		}
 		$capabilitiesEndpoint = rtrim($remoteHost, '/') . '/hosting/capabilities';
 
@@ -99,23 +131,26 @@ class CapabilitiesService {
 		}
 
 		try {
+			$startTime = microtime(true);
 			$response = $client->get($capabilitiesEndpoint, $options);
+			$duration = round(((microtime(true) - $startTime)), 3);
+			$this->logger->info('Fetched capabilities endpoint from ' . $capabilitiesEndpoint. ' in ' . $duration . ' seconds');
 			$responseBody = $response->getBody();
 			$capabilities = \json_decode($responseBody, true);
 
 			if (!is_array($capabilities)) {
 				$capabilities = [];
 			}
-
-
 		} catch (\Exception $e) {
+			$this->logger->error('Failed to fetch the Collabora capabilities endpoint: ' . $e->getMessage(), [ 'exception' => $e ]);
 			$capabilities = [];
 		}
 
 		$this->capabilities = $capabilities;
 		$ttl = 3600;
-		if (count($capabilities) === 0)
+		if (count($capabilities) === 0) {
 			$ttl = 60;
+		}
 
 		$this->cache->set('capabilities', $capabilities, $ttl);
 	}

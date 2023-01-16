@@ -23,8 +23,26 @@
 <template>
 	<div>
 		<div class="section">
-			<h2>Collabora Online</h2>
-			<p>{{ t('richdocuments', 'Collabora Online is a powerful LibreOffice-based online office suite with collaborative editing, which supports all major documents, spreadsheet and presentation file formats and works together with all modern browsers.') }}</p>
+			<h2>{{ productName }}</h2>
+			<p v-if="hasNextcloudBranding">
+				{{ t('richdocuments', 'Nextcloud Office is a powerful Collabora Online based online office suite with collaborative editing, which supports all major documents, spreadsheet and presentation file formats and works together with all modern browsers.') }}
+			</p>
+			<p v-else>
+				{{ t('richdocuments', 'Collabora Online is a powerful LibreOffice-based online office suite with collaborative editing, which supports all major documents, spreadsheet and presentation file formats and works together with all modern browsers.') }}
+			</p>
+
+			<!-- FIXME: Update this to NcNoteCard for NC25+ once we update the Nextcloud Vue-component library -->
+			<div v-if="settings.wopi_url && settings.wopi_url !== '' && !settings.wopi_allowlist" id="security-warning-state-warning">
+				<span class="icon icon-error-white" />
+				<span class="message">
+					{{ t('richdocuments', 'You have not configured the allow-list for WOPI requests. Without this setting users may download restricted files via WOPI requests to the Nextcloud server.') }}
+					<a title="WOPI settings documentation"
+						href="https://docs.nextcloud.com/server/latest/admin_manual/office/configuration.html#wopi-settings"
+						target="_blank"
+						rel="noopener"
+						class="external">{{ t('richdocuments', 'Click here for more info') }}</a>
+				</span>
+			</div>
 
 			<div v-if="settings.wopi_url && settings.wopi_url !== ''">
 				<div v-if="serverError == 2 && isNginx && serverMode === 'builtin'" id="security-warning-state-failure">
@@ -39,6 +57,9 @@
 				</div>
 				<div v-else-if="serverError == 1" id="security-warning-state-failure">
 					<span class="icon icon-loading" /><span class="message">{{ t('richdocuments', 'Setting up a new server') }}</span>
+				</div>
+				<div v-else-if="serverError == 3" id="security-warning-state-failure">
+					<span class="icon icon-close-white" /><span class="message">{{ t('richdocuments', 'Collabora Online should use the same protocol as the server installation.') }}</span>
 				</div>
 				<div v-else id="security-warning-state-ok">
 					<span class="icon icon-checkmark-white" /><span class="message">{{ t('richdocuments', 'Collabora Online server is reachable.') }}</span>
@@ -59,7 +80,8 @@
 						:disabled="updating">
 					<label for="customserver">{{ t('richdocuments', 'Use your own server') }}</label><br>
 					<p class="option-inline">
-						<em>{{ t('richdocuments', 'Collabora Online requires a seperate server acting as a WOPI-like Client to provide editing capabilities.') }}</em>
+						<em>{{ t('richdocuments', 'Nextcloud Office requires a separate server running Collabora Online to provide editing capabilities.') }}</em>
+						<em>{{ t('richdocuments', 'Collabora Online requires a separate server acting as a WOPI-like Client to provide editing capabilities.') }}</em>
 					</p>
 					<div v-if="serverMode === 'custom'" class="option-inline">
 						<form @submit.prevent.stop="updateServer">
@@ -149,7 +171,7 @@
 							{{ t('richdocuments', 'Loading available demo servers …') }}
 						</p>
 						<p v-else-if="demoServers.length > 0">
-							<Multiselect v-if="serverMode === 'demo'"
+							<NcMultiselect v-if="serverMode === 'demo'"
 								v-model="settings.demoUrl"
 								:custom-label="demoServerLabel"
 								track-by="demo_url"
@@ -179,7 +201,7 @@
 			</fieldset>
 		</div>
 
-		<Modal v-if="serverMode === 'demo' && !approvedDemoModal" @close="serverMode = 'custom'">
+		<NcModal v-if="serverMode === 'demo' && !approvedDemoModal" @close="serverMode = 'custom'">
 			<div class="modal__content">
 				<p>{{ t('richdocuments', 'Please make sure you understand that the following will happen if you set up the Collabora Online demo.') }}</p>
 				<ul>
@@ -196,7 +218,7 @@
 					@click="approvedDemoModal=true">
 				<input type="button" :value="t('richdocuments', 'I will setup my own server')" @click="serverMode = 'custom'">
 			</div>
-		</Modal>
+		</NcModal>
 
 		<div v-if="isSetup" id="advanced-settings" class="section">
 			<h2>{{ t('richdocuments', 'Advanced settings') }}</h2>
@@ -208,7 +230,7 @@
 
 			<SettingsCheckbox :value="settings.use_groups !== null"
 				:label="t('richdocuments', 'Restrict usage to specific groups')"
-				:hint="t('richdocuments', 'Collabora Online is enabled for all users by default. When this setting is active, only members of the specified groups can use it.')"
+				:hint="t('richdocuments', '{productName} is enabled for all users by default. When this setting is active, only members of the specified groups can use it.', { productName })"
 				:disabled="updating"
 				@input="updateUseGroups">
 				<SettingsSelectGroup v-if="settings.use_groups !== null"
@@ -221,7 +243,7 @@
 
 			<SettingsCheckbox :value="settings.edit_groups !== null"
 				:label="t('richdocuments', 'Restrict edit to specific groups')"
-				hint="All users can edit documents with Collabora Online by default. When this setting is active, only the members of the specified groups can edit and the others can only view documents.')"
+				:hint="t('richdocuments', 'All users can edit documents with {productName} by default. When this setting is active, only the members of the specified groups can edit, whereas the others can only view documents.', { productName })"
 				:disabled="updating"
 				@input="updateEditGroups">
 				<SettingsSelectGroup v-if="settings.edit_groups !== null"
@@ -266,9 +288,36 @@
 				@update="updateWopiAllowlist" />
 		</div>
 
+		<div v-if="isSetup" id="font-settings" class="section">
+			<h2>{{ t('richdocuments', 'Extra fonts') }}</h2>
+			<SettingsInputFile :label="t('richdocuments', 'Upload extra font file')"
+				:button-title="t('richdocuments', 'Upload a font file')"
+				:uploading="uploadingFont"
+				:mimetypes="fontMimes"
+				@change="uploadFont" />
+			<SettingsFontList :fonts="settings.fonts"
+				:label="t('richdocuments', 'Available fonts')"
+				@deleted="onFontDeleted" />
+			<em>
+				{{ fontHint }}
+			</em>
+			<em>
+				<pre>
+					{{ fontXmlHint }}
+				</pre>
+			</em>
+		</div>
+
 		<div v-if="isSetup" id="secure-view-settings" class="section">
 			<h2>{{ t('richdocuments', 'Secure view settings') }}</h2>
 			<p>{{ t('richdocuments', 'Secure view enables you to secure documents by embedding a watermark') }}</p>
+			<ul>
+				<li>{{ t('richdocuments', 'The settings only apply to compatible office files that are opened in Nextcloud Office') }}</li>
+				<li>{{ t('richdocuments', 'The following options within Nextcloud Office will be disabled: Copy, Download, Export, Print') }}</li>
+				<li>{{ t('richdocuments', 'Files may still be downloadable through Nextcloud unless restricted otherwise through sharing or access control settings') }}</li>
+				<li>{{ t('richdocuments', 'Files may still be downloadable via WOPI requests if WOPI settings are not correctly configured') }}</li>
+				<li>{{ t('richdocuments', 'Previews will be blocked for watermarked files to not leak the first page of documents') }}</li>
+			</ul>
 			<SettingsCheckbox v-model="settings.watermark.enabled"
 				:label="t('richdocuments', 'Enable watermarking')"
 				hint=""
@@ -306,6 +355,12 @@
 					hint=""
 					:disabled="updating"
 					@input="update" />
+				<SettingsCheckbox v-if="!settings.watermark.shareAll"
+					v-model="settings.watermark.shareDisabledDownload"
+					:label="t('richdocuments', 'Show watermark for shares without download permission')"
+					hint=""
+					:disabled="updating"
+					@input="update" />
 
 				<h3>Link shares</h3>
 				<SettingsCheckbox v-model="settings.watermark.linkAll"
@@ -340,19 +395,30 @@
 
 <script>
 import Vue from 'vue'
-import Multiselect from '@nextcloud/vue/dist/Components/Multiselect'
-import Modal from '@nextcloud/vue/dist/Components/Modal'
+import { loadState } from '@nextcloud/initial-state'
+import { generateUrl, generateFilePath } from '@nextcloud/router'
+import { showWarning, showError } from '@nextcloud/dialogs'
+import { NcModal, NcMultiselect } from '@nextcloud/vue'
 import axios from '@nextcloud/axios'
-import SettingsCheckbox from './SettingsCheckbox'
-import SettingsInputText from './SettingsInputText'
-import SettingsSelectTag from './SettingsSelectTag'
-import SettingsSelectGroup from './SettingsSelectGroup'
-import SettingsExternalApps from './SettingsExternalApps'
-import { generateUrl } from '@nextcloud/router'
+import SettingsCheckbox from './SettingsCheckbox.vue'
+import SettingsInputText from './SettingsInputText.vue'
+import SettingsSelectTag from './SettingsSelectTag.vue'
+import SettingsSelectGroup from './SettingsSelectGroup.vue'
+import SettingsExternalApps from './SettingsExternalApps.vue'
+import SettingsInputFile from './SettingsInputFile.vue'
+import SettingsFontList from './SettingsFontList.vue'
+
+import '@nextcloud/dialogs/styles/toast.scss'
 
 const SERVER_STATE_OK = 0
 const SERVER_STATE_LOADING = 1
 const SERVER_STATE_CONNECTION_ERROR = 2
+const PROTOCOL_MISMATCH = 3
+const fontMimes = [
+	'font/ttf',
+	'font/opentype',
+	'application/vnd.oasis.opendocument.formula-template',
+]
 
 export default {
 	name: 'AdminSettings',
@@ -361,9 +427,11 @@ export default {
 		SettingsInputText,
 		SettingsSelectTag,
 		SettingsSelectGroup,
-		Multiselect,
+		NcMultiselect,
 		SettingsExternalApps,
-		Modal,
+		SettingsInputFile,
+		SettingsFontList,
+		NcModal,
 	},
 	props: {
 		initial: {
@@ -373,6 +441,9 @@ export default {
 	},
 	data() {
 		return {
+			productName: loadState('richdocuments', 'productName', 'Nextcloud Office'),
+			hasNextcloudBranding: loadState('richdocuments', 'hasNextcloudBranding', true),
+
 			serverMode: '',
 			serverError: Object.values(OC.getCapabilities().richdocuments.collabora).length > 0 ? SERVER_STATE_OK : SERVER_STATE_CONNECTION_ERROR,
 			hostErrors: [window.location.host === 'localhost' || window.location.host === '127.0.0.1', window.location.protocol !== 'https:', false],
@@ -381,9 +452,12 @@ export default {
 			CODECompatible: true,
 			CODEAppID: 'richdocumentscode',
 			isNginx: false,
-			appUrl: OC.generateUrl('/settings/apps/app-bundles/richdocumentscode'),
+			appUrl: generateUrl('/settings/apps/app-bundles/richdocumentscode'),
 			approvedDemoModal: false,
 			updating: false,
+			uploadingFont: false,
+			fontMimes,
+			fontHintUrl: window.location.protocol + '//' + window.location.host + generateUrl('/apps/richdocuments/settings/fonts.json'),
 			groups: [],
 			tags: [],
 			uiVisible: {
@@ -408,6 +482,7 @@ export default {
 					allTagsList: [],
 					text: '',
 				},
+				fonts: [],
 			},
 		}
 	},
@@ -423,6 +498,28 @@ export default {
 		},
 		hasHostErrors() {
 			return this.hostErrors.some(x => x)
+		},
+		fontHint() {
+			return t('richdocuments', 'Make sure to set this URL: {url} in the coolwsd.xml file of your Collabora Online server to ensure the added fonts get loaded automatically.',
+				{ url: this.fontHintUrl }
+			)
+		},
+		fontXmlHint() {
+			return `
+<remote_font_config>
+	<url desc="URL of optional JSON file that lists fonts to be included in Online" type="string" default="">${this.fontHintUrl}</url>
+</remote_font_config>
+			`
+		},
+	},
+	watch: {
+		'settings.wopi_url'(newVal, oldVal) {
+			if (newVal !== oldVal) {
+				const protocol = this.checkUrlProtocol(newVal)
+				const nextcloudProtocol = this.checkUrlProtocol(window.location.href)
+				if (protocol !== nextcloudProtocol) this.serverError = PROTOCOL_MISMATCH
+				else this.serverError = Object.values(OC.getCapabilities().richdocuments.collabora).length > 0 ? SERVER_STATE_OK : SERVER_STATE_CONNECTION_ERROR
+			}
 		},
 	},
 	beforeMount() {
@@ -445,6 +542,7 @@ export default {
 		}
 		Vue.set(this.settings, 'edit_groups', this.settings.edit_groups ? this.settings.edit_groups.split('|') : null)
 		Vue.set(this.settings, 'use_groups', this.settings.use_groups ? this.settings.use_groups.split('|') : null)
+		Vue.set(this.settings, 'fonts', this.initial.fonts ? this.initial.fonts : [])
 
 		this.uiVisible.canonical_webroot = !!(this.settings.canonical_webroot && this.settings.canonical_webroot !== '')
 		this.uiVisible.external_apps = !!(this.settings.external_apps && this.settings.external_apps !== '')
@@ -462,7 +560,7 @@ export default {
 			this.CODECompatible = this.CODECompatible && supportedArchs.includes(this.initial.platform)
 		}
 		if (this.initial.platform && this.initial.platform === 'aarch64') {
-			this.appUrl = OC.generateUrl('/settings/apps/app-bundles/richdocumentscode_arm64')
+			this.appUrl = generateUrl('/settings/apps/app-bundles/richdocumentscode_arm64')
 			this.CODEInstalled = 'richdocumentscode_arm64' in OC.appswebroots
 			this.CODEAppID = 'richdocumentscode_arm64'
 		}
@@ -549,7 +647,7 @@ export default {
 				console.error(e)
 				this.serverError = SERVER_STATE_CONNECTION_ERROR
 				if (e.response.data.hint === 'missing_capabilities') {
-					OCP.Toast.warning('Could not connect to the /hosting/capabilities endpoint. Please check if your webserver configuration is up to date.')
+					showWarning('Could not connect to the /hosting/capabilities endpoint. Please check if your webserver configuration is up to date.')
 				}
 			}
 			this.checkIfDemoServerIsActive()
@@ -558,10 +656,18 @@ export default {
 			this.updating = true
 			try {
 				const result = await axios.post(
-					OC.filePath('richdocuments', 'ajax', 'admin.php'),
+					generateFilePath('richdocuments', 'ajax', 'admin.php'),
 					data
 				)
+
 				this.updating = false
+
+				const { message } = result?.data?.data || {}
+
+				if (message && message.length > 0) {
+					showWarning(message)
+				}
+
 				return result
 			} catch (e) {
 				this.updating = false
@@ -570,7 +676,7 @@ export default {
 		},
 		checkIfDemoServerIsActive() {
 			this.settings.demoUrl = this.demoServers ? this.demoServers.find((server) => server.demo_url === this.settings.wopi_url) : null
-			this.settings.CODEUrl = this.CODEInstalled ? window.location.protocol + '//' + window.location.host + OC.filePath(this.CODEAppID, '', '') + 'proxy.php?req=' : null
+			this.settings.CODEUrl = this.CODEInstalled ? window.location.protocol + '//' + window.location.host + generateFilePath(this.CODEAppID, '', '') + 'proxy.php?req=' : null
 			if (this.settings.wopi_url && this.settings.wopi_url !== '') {
 				this.serverMode = 'custom'
 			}
@@ -593,6 +699,53 @@ export default {
 			this.settings.wopi_url = this.settings.CODEUrl
 			this.settings.disable_certificate_verification = false
 			await this.updateServer()
+		},
+		checkUrlProtocol(string) {
+			let url
+			try {
+				url = new URL(string)
+			} catch (_) {
+				return false
+			}
+
+			return url.protocol
+		},
+		uploadFont(event) {
+			// TODO define font format list
+			const files = event.target.files
+			const file = files[0]
+			if (!fontMimes.includes(file.type)) {
+				showError(t('richdocuments', 'Font format not supported ({mime})', { mime: file.type }))
+				return
+			}
+			this.uploadingFont = true
+
+			// Clear input to ensure that the change event will be emitted if
+			// the same file is picked again.
+			event.target.value = ''
+
+			const formData = new FormData()
+			formData.append('fontfile', file)
+			const url = generateUrl('/apps/richdocuments/settings/fonts')
+			axios.post(url, formData, {
+				headers: {
+					'Content-Type': 'multipart/form-data',
+				},
+			}).then((response) => {
+				// TODO reload font list
+				this.settings.fonts.push(file.name)
+			}).catch((error) => {
+				console.error(error)
+				showError(error?.response?.data?.error)
+			}).then(() => {
+				this.uploadingFont = false
+			})
+		},
+		onFontDeleted(name) {
+			const index = this.settings.fonts.indexOf(name)
+			if (index !== -1) {
+				this.settings.fonts.splice(index, 1)
+			}
 		},
 	},
 }
@@ -645,18 +798,18 @@ export default {
 		margin-left: 25px;
 		&:not(.multiselect) {
 			margin-top: 10px;
-			font-style: italic;
 		}
 
-		ul {
-			margin-bottom: 15px;
-		}
+	}
 
-		li {
-			list-style: disc;
-			padding: 3px;
-			margin-left: 20px;
-		}
+	ul {
+		margin-bottom: 15px;
+	}
+
+	li {
+		list-style: disc;
+		padding: 3px;
+		margin-left: 20px;
 	}
 
 	.modal__content {

@@ -1,31 +1,22 @@
+import '../css/filetypes.scss'
+import '../css/files.scss'
+
 import { emit } from '@nextcloud/event-bus'
-import { getDocumentUrlFromTemplate, getDocumentUrlForPublicFile, getDocumentUrlForFile } from './helpers/url'
+import { imagePath, generateOcsUrl, generateUrl, generateFilePath } from '@nextcloud/router'
+import { showError } from '@nextcloud/dialogs'
+import { getDocumentUrlFromTemplate, getDocumentUrlForPublicFile, getDocumentUrlForFile } from './helpers/url.js'
 import PostMessageService from './services/postMessage.tsx'
 import Config from './services/config.tsx'
-import Preload from './services/preload'
-import Types from './helpers/types'
-import FilesAppIntegration from './view/FilesAppIntegration'
-import '../css/viewer.scss'
-import { splitPath } from './helpers'
-import NewFileMenu from './view/NewFileMenu'
+import Types from './helpers/types.js'
+import FilesAppIntegration from './view/FilesAppIntegration.js'
+import { splitPath } from './helpers/index.js'
+import { enableScrollLock, disableScrollLock } from './helpers/safariFixer.js'
+import NewFileMenu from './view/NewFileMenu.js'
 
 const FRAME_DOCUMENT = 'FRAME_DOCUMENT'
 const PostMessages = new PostMessageService({
 	FRAME_DOCUMENT: () => document.getElementById('richdocumentsframe').contentWindow,
 })
-
-// Workaround for Safari to resize the iframe to the proper height
-// as 100vh is not the proper viewport height there
-const handleResize = () => {
-	const frame = document.getElementById('richdocumentsframe')
-	if (frame) {
-		frame.style.maxHeight = (document.documentElement.clientHeight - 50) + 'px'
-	}
-}
-window.addEventListener('resize', handleResize)
-if (window && window.visualViewport) {
-	visualViewport.addEventListener('resize', handleResize)
-}
 
 const isDownloadHidden = document.getElementById('hideDownload') && document.getElementById('hideDownload').value === 'true'
 
@@ -43,59 +34,15 @@ const odfViewer = {
 	excludeMimeFromDefaultOpen: OC.getCapabilities().richdocuments.mimetypesNoDefaultOpen,
 	hideDownloadMimes: ['image/jpeg', 'image/svg+xml', 'image/cgm', 'image/vnd.dxf', 'image/x-emf', 'image/x-wmf', 'image/x-wpg', 'image/x-freehand', 'image/bmp', 'image/png', 'image/gif', 'image/tiff', 'image/jpg', 'image/jpeg', 'text/plain', 'application/pdf'],
 
-	registerFileActions() {
-		const EDIT_ACTION_NAME = 'Edit with ' + OC.getCapabilities().richdocuments.productName
-		for (const mime of odfViewer.supportedMimes) {
-			OCA.Files.fileActions.register(
-				mime,
-				EDIT_ACTION_NAME,
-				OC.PERMISSION_READ,
-				OC.imagePath('core', 'actions/rename'),
-				(fileName, context) => {
-					// Workaround since the new template frontend doesn't pass
-					// the full context yet nor the filelist contains the element
-					// at the point when the action is triggered.
-					// This will be fixed by https://github.com/nextcloud/server/pull/25797
-					// but this should be kept for backward compatibility for now
-					if (!context?.$file) {
-						if (context?.fileList) {
-							context.fileList.setViewerMode(true)
-						}
-						const filePath = (context.dir === '/' ? '/' : context.dir + '/') + fileName
-						OCA.Files.App.fileList.filesClient.getFileInfo(filePath).then((status, fileInfo) => {
-							const fileModel = context.fileList.findFile(fileName)
-							const shareOwnerId = fileModel?.shareOwnerId || fileInfo?.shareOwnerId
-							context.fileId = fileInfo.id
-							return this.onEdit(fileName, {
-								...context,
-								shareOwnerId,
-							})
-						})
-						return
-					}
-
-					const fileModel = context.fileList.findFile(fileName)
-					const shareOwnerId = fileModel?.shareOwnerId
-					return this.onEdit(fileName, {
-						...context,
-						shareOwnerId,
-					})
-				},
-				t('richdocuments', 'Edit with {productName}', { productName: OC.getCapabilities().richdocuments.productName }, undefined, { escape: false })
-			)
-			if (odfViewer.excludeMimeFromDefaultOpen.indexOf(mime) === -1 || isDownloadHidden) {
-				OCA.Files.fileActions.setDefault(mime, EDIT_ACTION_NAME)
-			}
-		}
-	},
-
 	onEdit(fileName, context) {
 		let fileDir
 		let fileId
 		let templateId
 
+		enableScrollLock()
+
 		if (!odfViewer.isCollaboraConfigured) {
-			$.get(OC.linkToOCS('cloud') + '/capabilities?format=json').then(
+			$.get(generateOcsUrl('cloud/capabilities?format=json')).then(
 				e => {
 					if ((OC.getCapabilities().richdocuments.config.wopi_url.indexOf('proxy.php') !== -1)
 						|| (typeof e.ocs.data.capabilities.richdocuments.collabora === 'object'
@@ -103,19 +50,15 @@ const odfViewer = {
 						odfViewer.isCollaboraConfigured = true
 						odfViewer.onEdit(fileName, context)
 					} else {
-						const setupUrl = OC.generateUrl('/settings/admin/richdocuments')
+						const setupUrl = generateUrl('/settings/admin/richdocuments')
 						const installHint = OC.isUserAdmin()
 							? `<a href="${setupUrl}">Collabora Online is not setup yet. <br />Click here to configure your own server or connect to a demo server.</a>`
 							: t('richdocuments', 'Collabora Online is not setup yet. Please contact your administrator.')
 
-						if (OCP.Toast) {
-							OCP.Toast.error(installHint, {
-								isHTML: true,
-								timeout: 0,
-							})
-						} else {
-							OC.Notification.showHtml(installHint)
-						}
+						showError(installHint, {
+							isHTML: true,
+							timeout: 0,
+						})
 					}
 				}
 			)
@@ -127,7 +70,7 @@ const odfViewer = {
 		odfViewer.open = true
 		if (context) {
 			if (context?.$file?.attr('data-mounttype') === 'external-session') {
-				OCP.Toast.error(t('richdocuments', 'Opening the file is not supported, since the credentials for the external storage are not available without a session'), {
+				showError(t('richdocuments', 'Opening the file is not supported, since the credentials for the external storage are not available without a session'), {
 					timeout: 0,
 				})
 				odfViewer.open = false
@@ -148,53 +91,7 @@ const odfViewer = {
 			documentUrl = getDocumentUrlFromTemplate(templateId, fileName, fileDir)
 		}
 
-		/**
-		 * We need to reload the page to set a proper CSP if the file is federated
-		 * and the reload didn't happen for the exact same file
-		 *
-		 * @param {string} url the url
-		 * @param {Function} callback to be run after reload is complete
-		 */
-		const canAccessCSP = (url, callback) => {
-			let canEmbed = false
-			const frame = document.createElement('iframe')
-			frame.style.display = 'none'
-			frame.onload = () => {
-				canEmbed = true
-			}
-			document.body.appendChild(frame)
-			frame.setAttribute('src', url)
-			setTimeout(() => {
-				if (!canEmbed) {
-					callback()
-				}
-				document.body.removeChild(frame)
-			}, 1000)
-
-		}
-
-		// FIXME: Once Nextcloud 16 is minimum requirement we can just pass the allowed domains to initial state
-		// to check then if they are set properly
-		const reloadForFederationCSP = (fileName, shareOwnerId) => {
-			const preloadId = Preload.open ? parseInt(Preload.open.id) : -1
-			if (typeof shareOwnerId !== 'undefined') {
-				const lastIndex = shareOwnerId.lastIndexOf('@')
-				// only redirect if remote file, not opened though reload and csp blocks the request
-				if (shareOwnerId.substr(lastIndex).indexOf('/') !== -1 && fileId !== preloadId) {
-					canAccessCSP('https://' + shareOwnerId.substr(lastIndex) + '/ocs/v2.php/apps/richdocuments/api/v1/federation', () => {
-						console.debug('Cannot load federated instance though CSP, navigating to ', OC.generateUrl('/apps/richdocuments/open?fileId=' + fileId))
-						window.location = OC.generateUrl('/apps/richdocuments/open?fileId=' + fileId)
-					})
-				}
-			}
-			return false
-		}
-
-		if (context) {
-			reloadForFederationCSP(fileName, context?.shareOwnerId)
-		}
-
-		$('head').append($('<link rel="stylesheet" type="text/css" href="' + OC.filePath('richdocuments', 'css', 'mobile.css') + '"/>'))
+		$('head').append($('<link rel="stylesheet" type="text/css" href="' + generateFilePath('richdocuments', 'css', 'mobile.css') + '"/>'))
 
 		const $iframe = $('<iframe id="richdocumentsframe" nonce="' + btoa(OC.requestToken) + '" scrolling="no" allowfullscreen src="' + documentUrl + '" />')
 		odfViewer.loadingTimeout = setTimeout(odfViewer.onTimeout,
@@ -210,19 +107,17 @@ const odfViewer = {
 		const viewport = document.querySelector('meta[name=viewport]')
 		viewport.setAttribute('content', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no')
 		if (isPublic) {
-			// force the preview to adjust its height
-			$('#preview').append($iframe).css({ height: '100%' })
-			$('body').css({ height: '100%' })
+			$('body').append($iframe)
+			$iframe.addClass('full')
 			$('#content').addClass('full-height')
 			$('footer').addClass('hidden')
 			$('#imgframe').addClass('hidden')
-			$('.directLink').addClass('hidden')
-			$('.directDownload').addClass('hidden')
 			$('#controls').addClass('hidden')
 			$('#content').addClass('loading')
 		} else {
 			$('body').css('overflow', 'hidden')
-			$('#app-content').append($iframe)
+			$('body').append($iframe)
+			$iframe.addClass('full')
 			$iframe.hide()
 		}
 
@@ -248,13 +143,13 @@ const odfViewer = {
 		odfViewer.receivedLoading = true
 		$('#richdocumentsframe').prop('title', 'Collabora Online')
 		$('#richdocumentsframe').show()
-		handleResize()
 		$('html, body').scrollTop(0)
 		$('#content').removeClass('loading')
 		FilesAppIntegration.initAfterReady()
 	},
 
 	onClose() {
+		disableScrollLock()
 		odfViewer.open = false
 		clearTimeout(odfViewer.loadingTimeout)
 		odfViewer.receivedLoading = false
@@ -293,7 +188,7 @@ const odfViewer = {
 
 	checkProxyStatus() {
 		const wopiUrl = OC.getCapabilities().richdocuments.config.wopi_url
-		const url = wopiUrl.substr(0, wopiUrl.indexOf('proxy.php') + 'proxy.php'.length)
+		const url = wopiUrl.slice(0, wopiUrl.indexOf('proxy.php') + 'proxy.php'.length)
 		$.get(url + '?status').done(function(result) {
 			if (result && result.status) {
 				if (result.status === 'OK' || result.status === 'error') {
@@ -351,32 +246,21 @@ $(document).ready(function() {
 		&& typeof OCA.Files !== 'undefined'
 		&& typeof OCA.Files.fileActions !== 'undefined'
 	) {
-		// check if texteditor app is enabled and loaded...
-		if (typeof OCA.Files_Texteditor === 'undefined' && typeof OCA.Text === 'undefined') {
-			odfViewer.supportedMimes.push('text/plain')
-		}
-
-		odfViewer.registerFileActions()
 		if (isPublic) {
 			OC.Plugins.register('OCA.Files.NewFileMenu', NewFileMenu)
 		}
 	}
 
-	// Open the template picker if there was a create parameter detected on load
-	if (Preload.create && Preload.create.type && Preload.create.filename) {
-		FilesAppIntegration.preloadCreate()
-	}
-
-	if (Preload.open) {
-		FilesAppIntegration.preloadOpen()
-	}
+	OC.MimeType._mimeTypeIcons['application/vnd.oasis.opendocument.graphics'] = imagePath('richdocuments', 'x-office-draw')
 
 	// Open documents if a public page is opened for a supported mimetype
 	const isSupportedMime = isPublic && odfViewer.supportedMimes.indexOf($('#mimetype').val()) !== -1 && odfViewer.excludeMimeFromDefaultOpen.indexOf($('#mimetype').val()) === -1
 	const showSecureView = isPublic && isDownloadHidden && odfViewer.hideDownloadMimes.indexOf($('#mimetype').val()) !== -1
-	if (isSupportedMime || showSecureView) {
-		odfViewer.onEdit(document.getElementById('filename').value)
+	if (!isSupportedMime && !showSecureView) {
+		return
 	}
+
+	odfViewer.onEdit(document.getElementById('filename').value)
 
 	PostMessages.registerPostMessageHandler(({ parsed }) => {
 		console.debug('[viewer] Received post message', parsed)

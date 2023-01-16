@@ -1,9 +1,6 @@
 /**
- * @copyright Copyright (c) 2020 Julius Härtl <jus@bitgrid.net>
- *
- * @author Julius Härtl <jus@bitgrid.net>
- *
- * @license GNU AGPL version 3 or any later version
+ * SPDX-FileLicenseText: 2023 Julius Härtl <jus@bitgrid.net>
+ * SPDX-License-Identifier: AGPL-3.0-or-later
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -20,24 +17,9 @@
  *
  */
 
-import { getSearchParam } from '../helpers/url'
+import './commands.js'
 
-const preloadCreate = getSearchParam('richdocuments_create')
-const preloadOpen = getSearchParam('richdocuments_open')
-const Preload = {}
-
-if (preloadCreate) {
-	Preload.create = {
-		type: getSearchParam('richdocuments_create'),
-		filename: getSearchParam('richdocuments_filename'),
-	}
-}
-
-if (preloadOpen) {
-	Preload.open = {
-		filename: preloadOpen,
-		id: getSearchParam('richdocuments_fileId'),
-	}
-}
-
-export default Preload
+Cypress.Screenshot.defaults({
+	overwrite: true,
+	capture: 'viewport',
+})

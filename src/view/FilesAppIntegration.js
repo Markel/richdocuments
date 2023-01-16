@@ -20,11 +20,10 @@
  *
  */
 
-import Preload from '../services/preload'
-import { splitPath } from '../helpers'
-import Types from '../helpers/types'
-import Config from '../services/config.tsx'
-import NewFileMenu from './NewFileMenu'
+import { generateUrl, generateRemoteUrl, getRootUrl } from '@nextcloud/router'
+import { getCurrentUser } from '@nextcloud/auth'
+import moment from '@nextcloud/moment'
+import { getCurrentDirectory } from '../helpers/filesApp.js'
 
 const isPublic = document.getElementById('isPublic') && document.getElementById('isPublic').value === '1'
 
@@ -82,25 +81,8 @@ export default {
 			this.getFileList().setPageTitle && this.getFileList().setPageTitle(this.fileName)
 		}
 
-		let headerRight = document.querySelector('#header .header-right')
-		if (!headerRight) {
-			// there might not be a right header for links with hide download enabled
-			const header = document.querySelector('#header')
-			headerRight = document.createElement('div')
-			headerRight.classList.add('header-right')
-			headerRight.classList.add('header-right-richdocuments')
-			header.insertBefore(headerRight, null)
-		}
-		if (!document.getElementById('richdocuments-header')) {
-			const richdocumentsHeader = document.createElement('div')
-			richdocumentsHeader.id = 'richdocuments-header'
-			headerRight.insertBefore(richdocumentsHeader, headerRight.firstChild)
-			this._addAvatarList()
-			if (!isPublic) {
-				this._addHeaderShareButton()
-				this._addHeaderFileActions()
-				this.addVersionSidebarEvents()
-			}
+		if (!isPublic) {
+			this.addVersionSidebarEvents()
 		}
 	},
 
@@ -145,8 +127,9 @@ export default {
 			console.error('[FilesAppIntegration] Sharing is not supported')
 			return
 		}
-		this.getFileList().showDetailsView && this.getFileList().showDetailsView(this.fileName, 'sharing')
-		OC.Apps.showAppSidebar()
+		if (OCA.Files.Sidebar) {
+			OCA.Files.Sidebar.open(this.filePath + '/' + this.fileName)
+		}
 	},
 
 	rename(newName) {
@@ -170,7 +153,7 @@ export default {
 			const filename = path.substring(path.lastIndexOf('/') + 1)
 			$.ajax({
 				type: 'POST',
-				url: OC.generateUrl('apps/richdocuments/assets'),
+				url: generateUrl('apps/richdocuments/assets'),
 				data: {
 					path,
 				},
@@ -207,10 +190,10 @@ export default {
 		if (this.fileModel) {
 			return this.fileModel
 		}
-		if (!this.getFileList()) {
+		if (!this.getFileList() || !this.getFileList().getModelForFile || !this.getFileList()._updateDetailsView) {
 			return null
 		}
-		this.getFileList()._updateDetailsView && this.getFileList()._updateDetailsView(this.fileName, false)
+		this.getFileList()._updateDetailsView(this.fileName, false)
 		this.fileModel = this.getFileList().getModelForFile(this.fileName)
 
 		if (this.fileModel && this.fileModel.on) {
@@ -261,7 +244,8 @@ export default {
 
 	_addHeaderShareButton() {
 		if ($('header').length) {
-			const $button = $('<div id="richdocuments-sharing"><a class="icon-shared icon-white"></a></div>')
+			const isInverted = Boolean(window?.OCA?.Theming?.inverted)
+			const $button = $('<div id="richdocuments-sharing"><a class="icon-collabora icon-shared ' + (isInverted ? 'icon-black' : 'icon-white') + '"></a></div>')
 			$('#richdocuments-header').append($button)
 			$button.on('click', () => {
 				if (!$('#app-sidebar').is(':visible')) {
@@ -277,7 +261,8 @@ export default {
 		console.debug('[FilesAppIntegration] Adding header file actions')
 		OC.unregisterMenu($('#richdocuments-actions .icon-more'), $('#richdocuments-actions-menu'))
 		$('#richdocuments-actions').remove()
-		const actionsContainer = $('<div id="richdocuments-actions"><div class="icon-more icon-white"></div><ul id="richdocuments-actions-menu" class="popovermenu"></ul></div>')
+		const isInverted = Boolean(window?.OCA?.Theming?.inverted)
+		const actionsContainer = $('<div id="richdocuments-actions"><div class="icon-collabora icon-more ' + (isInverted ? 'icon-black' : 'icon-white') + '"></div><ul id="richdocuments-actions-menu" class="popovermenu"></ul></div>')
 		const actions = actionsContainer.find('#richdocuments-actions-menu').empty()
 
 		const getContext = () => ({
@@ -329,7 +314,7 @@ export default {
 
 	/**
 	 * @param {View} view the view
-	 * @returns {$|HTMLElement}
+	 * @return {$|HTMLElement}
 	 * @private
 	 */
 	_userEntry(view) {
@@ -366,7 +351,7 @@ export default {
 
 	/**
 	 * @param {View} view the view
-	 * @returns {$|HTMLElement}
+	 * @return {$|HTMLElement}
 	 * @private
 	 */
 	_avatarForView(view) {
@@ -375,7 +360,7 @@ export default {
 		const avatar = avatarContainer.find('.avatar')
 
 		avatar.css({
-			borderColor: '#' + ('000000' + Number(view.Color).toString(16)).substr(-6),
+			borderColor: '#' + ('000000' + Number(view.Color).toString(16)).slice(-6),
 			borderWidth: '2px',
 			borderStyle: 'solid',
 		})
@@ -406,7 +391,7 @@ export default {
 			view.UserName = view.UserName !== '' ? view.UserName : t('richdocuments', 'Guest')
 			popover.find('ul').append(this._userEntry(view))
 
-			if (view.UserId === OC.currentUser) {
+			if (view.UserId === getCurrentUser()?.uid) {
 				continue
 			}
 			if (view.UserId !== '' && users.indexOf(view.UserId) > -1) {
@@ -456,7 +441,7 @@ export default {
 			$('.tab.versionsTabView').prepend('<ul id="currentVersion"><li data-revision="" class="active"><div><div class="preview-container"><img src="' + preview + '" width="44" /></div><div class="version-container">\n'
 				+ '<div><a class="downloadVersion">' + t('richdocuments', 'Current version (unsaved changes)') + '</a></div></div></li></ul>')
 			$('.live-relative-timestamp').each(function() {
-				$(this).text(OC.Util.relativeModifiedDate(parseInt($(this).attr('data-timestamp'), 10)))
+				$(this).text(moment(parseInt($(this).attr('data-timestamp'), 10)).fromNow())
 			})
 		}
 	},
@@ -529,13 +514,13 @@ export default {
 	},
 
 	_restoreDAV(version) {
-		const restoreUrl = OC.linkToRemoteBase('dav') + '/versions/' + OC.getCurrentUser().uid
+		const restoreUrl = getRootUrl() + '/remote.php/dav/versions/' + getCurrentUser().uid
 			+ '/versions/' + this.fileId + '/' + version
 		$.ajax({
 			type: 'MOVE',
 			url: restoreUrl,
 			headers: {
-				Destination: OC.linkToRemote('dav') + '/versions/' + OC.getCurrentUser().uid + '/restore/target',
+				Destination: generateRemoteUrl('dav') + '/versions/' + getCurrentUser().uid + '/restore/target',
 			},
 			success: this._restoreSuccess.bind(this),
 			error: this._restoreError.bind(this),
@@ -565,8 +550,7 @@ export default {
 					if (type === 'text') {
 						type = 'document'
 					}
-					const dir = parent.$('#dir').val()
-					const url = OC.generateUrl('/apps/files/?dir=' + dir + '&richdocuments_create=' + type + '&richdocuments_filename=' + encodeURI(value))
+					const url = generateUrl('/apps/files/?dir=' + getCurrentDirectory() + '&richdocuments_create=' + type + '&richdocuments_filename=' + encodeURI(value))
 					window.open(url, '_blank')
 				}
 			},
@@ -581,44 +565,9 @@ export default {
 		})
 	},
 
-	/**
-	 * Automaically open a document on page load
-	 */
-	preloadOpen() {
-		if (this.handlers.preloadOpen && this.handlers.preloadOpen(this)) {
-			return
-		}
-
-		const fileId = Preload.open.id
-		const path = Preload.open.filename
-		setTimeout(function() {
-			window.FileList.$fileList.one('updated', function() {
-				const [, file] = splitPath(path)
-				const fileModel = FileList.getModelForFile(file)
-				OCA.RichDocuments.open({ path, fileId, fileModel, fileList: window.FileList })
-			})
-		}, 250)
-	},
-
-	/**
-	 * Automaically open a template picker on page load
-	 */
-	preloadCreate() {
-		if (this.handlers.preloadCreate && this.handlers.preloadCreate(this)) {
-			return
-		}
-
-		setTimeout(function() {
-			window.FileList.$fileList.one('updated', function() {
-				const fileType = Types.getFileType(Preload.create.type, Config.get('ooxml'))
-				NewFileMenu._openTemplatePicker(Preload.create.type, fileType.mime, Preload.create.filename + '.' + fileType.extension)
-			})
-		}, 250)
-	},
-
 	loggingContext() {
 		return {
-			currentUser: OC.getCurrentUser()?.uid,
+			currentUser: getCurrentUser()?.uid,
 			file: {
 				sharingToken: document.getElementById('sharingToken')?.value,
 				fileId: this.fileId,

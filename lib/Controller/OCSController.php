@@ -26,13 +26,15 @@ namespace OCA\Richdocuments\Controller;
 use Exception;
 use GuzzleHttp\Exception\BadResponseException;
 use OCA\Richdocuments\Db\DirectMapper;
+use OCA\Richdocuments\Exceptions\ExpiredTokenException;
+use OCA\Richdocuments\Exceptions\UnknownTokenException;
 use OCA\Richdocuments\Service\FederationService;
 use OCA\Richdocuments\TemplateManager;
 use OCA\Richdocuments\TokenManager;
-use OCP\AppFramework\Db\DoesNotExistException;
 use OCP\AppFramework\Http;
 use OCP\AppFramework\Http\DataResponse;
 use OCP\AppFramework\OCS\OCSBadRequestException;
+use OCP\AppFramework\OCS\OCSException;
 use OCP\AppFramework\OCS\OCSForbiddenException;
 use OCP\AppFramework\OCS\OCSNotFoundException;
 use OCP\Constants;
@@ -46,7 +48,6 @@ use OCP\Share\Exceptions\ShareNotFound;
 use OCP\Share\IManager;
 
 class OCSController extends \OCP\AppFramework\OCSController {
-
 	/** @var IRootFolder */
 	private $rootFolder;
 
@@ -88,11 +89,11 @@ class OCSController extends \OCP\AppFramework\OCSController {
 	) {
 		parent::__construct($appName, $request);
 
-		$this->rootFolder   = $rootFolder;
-		$this->userId       = $userId;
+		$this->rootFolder = $rootFolder;
+		$this->userId = $userId;
 		$this->directMapper = $directMapper;
 		$this->urlGenerator = $urlGenerator;
-		$this->manager      = $manager;
+		$this->manager = $manager;
 		$this->tokenManager = $tokenManager;
 		$this->shareManager = $shareManager;
 		$this->federationService = $federationService;
@@ -111,7 +112,7 @@ class OCSController extends \OCP\AppFramework\OCSController {
 	public function createDirect($fileId) {
 		try {
 			$userFolder = $this->rootFolder->getUserFolder($this->userId);
-			$nodes      = $userFolder->getById($fileId);
+			$nodes = $userFolder->getById($fileId);
 
 			if ($nodes === []) {
 				throw new OCSNotFoundException();
@@ -279,8 +280,12 @@ class OCSController extends \OCP\AppFramework\OCSController {
 		try {
 			$this->tokenManager->updateGuestName($access_token, $guestName);
 			return new DataResponse([], Http::STATUS_OK);
-		} catch (DoesNotExistException $e) {
+		} catch (UnknownTokenException $e) {
 			$response = new DataResponse([], Http::STATUS_FORBIDDEN);
+			$response->throttle();
+			return $response;
+		} catch (ExpiredTokenException $e) {
+			$response = new DataResponse([], Http::STATUS_UNAUTHORIZED);
 			$response->throttle();
 			return $response;
 		}
@@ -316,14 +321,14 @@ class OCSController extends \OCP\AppFramework\OCSController {
 			throw new OCSBadRequestException('Invalid template provided');
 		}
 
-		$info = $this->mb_pathinfo($path);
-
-		$userFolder = $this->rootFolder->getUserFolder($this->userId);
-		$folder = $userFolder->get($info['dirname']);
-		$name = $folder->getNonExistingName($info['basename']);
-		$file = $folder->newFile($name);
-
 		try {
+			$info = $this->mb_pathinfo($path);
+
+			$userFolder = $this->rootFolder->getUserFolder($this->userId);
+			$folder = isset($info['dirname']) ? $userFolder->get($info['dirname']) : $userFolder;
+			$name = $folder->getNonExistingName($info['basename']);
+			$file = $folder->newFile($name);
+
 			$direct = $this->directMapper->newDirect($this->userId, $template, $file->getId());
 
 			return new DataResponse([
@@ -333,22 +338,25 @@ class OCSController extends \OCP\AppFramework\OCSController {
 			]);
 		} catch (NotFoundException $e) {
 			throw new OCSNotFoundException();
+		} catch (\Exception $e) {
+			$this->logger->logException($e);
+			throw new OCSException('Failed to create new file from template.');
 		}
 	}
 
 	private function mb_pathinfo($filepath) {
 		$result = [];
 		preg_match('%^(.*?)[\\\\/]*(([^/\\\\]*?)(\.([^\.\\\\/]+?)|))[\\\\/\.]*$%im', ltrim('/' . $filepath), $matches);
-		if($matches[1]) {
+		if ($matches[1]) {
 			$result['dirname'] = $matches[1];
 		}
-		if($matches[2]) {
+		if ($matches[2]) {
 			$result['basename'] = $matches[2];
 		}
-		if($matches[5]) {
+		if ($matches[5]) {
 			$result['extension'] = $matches[5];
 		}
-		if($matches[3]) {
+		if ($matches[3]) {
 			$result['filename'] = $matches[3];
 		}
 		return $result;

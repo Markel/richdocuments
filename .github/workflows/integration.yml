@@ -7,6 +7,10 @@ on:
       - master
       - stable*
 
+concurrency:
+  group: ${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
 env:
   APP_NAME: richdocuments
 
@@ -30,7 +34,7 @@ jobs:
         image: collabora/code
         env:
           extra_params: '--o:ssl.enable=false'
-          domain: nextcloud
+          aliasgroup1: 'http://nextcloud'
         ports:
           - "9980:9980"
 
@@ -58,7 +62,9 @@ jobs:
         with:
           php-version: ${{ matrix.php-versions }}
           tools: phpunit:8.5.14
-          extensions: mbstring, iconv, fileinfo, intl, sqlite, pdo_sqlite, gd, zip
+          extensions: mbstring, iconv, fileinfo, intl, sqlite, pdo_sqlite, gd, zip, apcu
+          ini-values:
+            apc.enable_cli=on
           coverage: none
 
       - name: Set up PHPUnit
@@ -70,6 +76,7 @@ jobs:
           DB_PORT: 4444
         run: |
           mkdir data
+          echo '<?php $CONFIG=["memcache.local"=>"\OC\Memcache\APCu","hashing_default_password"=>true];' > config/config.php
           ./occ maintenance:install --verbose --database=${{ matrix.databases }} --database-name=nextcloud --database-host=127.0.0.1 --database-port=$DB_PORT --database-user=root --database-pass=rootpassword --admin-user admin --admin-pass password
           ./occ app:enable --force ${{ env.APP_NAME }}
 
@@ -103,7 +110,7 @@ jobs:
         image: collabora/code
         env:
           extra_params: '--o:ssl.enable=false'
-          domain: nextcloud
+          aliasgroup1: 'http://nextcloud'
         ports:
           - "9980:9980"
 
@@ -131,7 +138,9 @@ jobs:
         with:
           php-version: ${{ matrix.php-versions }}
           tools: phpunit:8.5.14
-          extensions: mbstring, iconv, fileinfo, intl, mysql, pdo_mysql, gd, zip
+          extensions: mbstring, iconv, fileinfo, intl, mysql, pdo_mysql, gd, zip, apcu
+          ini-values:
+            apc.enable_cli=on
           coverage: none
 
       - name: Set up PHPUnit
@@ -143,6 +152,7 @@ jobs:
           DB_PORT: 4444
         run: |
           mkdir data
+          echo '<?php $CONFIG=["memcache.local"=>"\OC\Memcache\APCu","hashing_default_password"=>true];' > config/config.php
           ./occ maintenance:install --verbose --database=${{ matrix.databases }} --database-name=nextcloud --database-host=127.0.0.1 --database-port=$DB_PORT --database-user=root --database-pass=rootpassword --admin-user admin --admin-pass password
           ./occ app:enable --force ${{ env.APP_NAME }}
 
@@ -166,7 +176,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres
+        image: postgres:14
         ports:
           - 4444:5432/tcp
         env:
@@ -178,7 +188,7 @@ jobs:
         image: collabora/code
         env:
           extra_params: '--o:ssl.enable=false'
-          domain: nextcloud
+          aliasgroup1: 'http://nextcloud'
         ports:
           - "9980:9980"
 
@@ -206,7 +216,9 @@ jobs:
         with:
           php-version: ${{ matrix.php-versions }}
           tools: phpunit:8.5.14
-          extensions: mbstring, iconv, fileinfo, intl, pgsql, pdo_pgsql, gd, zip
+          extensions: mbstring, iconv, fileinfo, intl, pgsql, pdo_pgsql, gd, zip, apcu
+          ini-values:
+            apc.enable_cli=on
           coverage: none
 
       - name: Set up PHPUnit
@@ -218,6 +230,7 @@ jobs:
           DB_PORT: 4444
         run: |
           mkdir data
+          echo '<?php $CONFIG=["memcache.local"=>"\OC\Memcache\APCu","hashing_default_password"=>true];' > config/config.php
           ./occ maintenance:install --verbose --database=${{ matrix.databases }} --database-name=nextcloud --database-host=127.0.0.1 --database-port=$DB_PORT --database-user=root --database-pass=rootpassword --admin-user admin --admin-pass password
           ./occ app:enable --force ${{ env.APP_NAME }}
 
@@ -248,7 +261,7 @@ jobs:
         image: collabora/code
         env:
           extra_params: '--o:ssl.enable=false'
-          domain: nextcloud
+          aliasgroup1: 'http://nextcloud'
         ports:
           - "9980:9980"
 
@@ -275,7 +288,9 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: "${{ matrix.php-versions }}"
-          extensions: mbstring, iconv, fileinfo, intl, oci8, gd, zip
+          extensions: mbstring, iconv, fileinfo, intl, oci8, gd, zip, apcu
+          ini-values:
+            apc.enable_cli=on
           tools: phpunit:8.5.15
           coverage: none
 
@@ -286,6 +301,7 @@ jobs:
       - name: Set up Nextcloud
         run: |
           mkdir data
+          echo '<?php $CONFIG=["memcache.local"=>"\OC\Memcache\APCu","hashing_default_password"=>true];' > config/config.php
           ./occ maintenance:install --verbose --database=oci --database-name=XE --database-host=127.0.0.1 --database-port=1521 --database-user=autotest --database-pass=owncloud --admin-user admin --admin-pass password
           php -f index.php
           ./occ app:enable --force ${{ env.APP_NAME }}

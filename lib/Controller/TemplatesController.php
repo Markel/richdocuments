@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 /**
  * @copyright Copyright (c) 2018 John Molakvoæ <skjnldsv@protonmail.com>
@@ -31,6 +32,7 @@ use OCP\AppFramework\Http\DataResponse;
 use OCP\AppFramework\Http\FileDisplayResponse;
 use OCP\AppFramework\Http\JSONResponse;
 use OCP\AppFramework\Http\NotFoundResponse;
+use OCP\Files\IMimeTypeDetector;
 use OCP\Files\Node;
 use OCP\Files\NotFoundException;
 use OCP\Files\SimpleFS\ISimpleFile;
@@ -38,16 +40,14 @@ use OCP\IL10N;
 use OCP\IPreview;
 use OCP\IRequest;
 use OC\Files\Filesystem;
+use Psr\Log\LoggerInterface;
 
 class TemplatesController extends Controller {
-	/** @var IL10N */
-	private $l10n;
-
-	/** @var TemplateManager */
-	private $manager;
-
-	/** @var IPreview */
-	private $preview;
+	private IL10N $l10n;
+	private TemplateManager $manager;
+	private IPreview $preview;
+	private IMimeTypeDetector $mimeTypeDetector;
+	private LoggerInterface $logger;
 
 	/** @var int Max template size */
 	private $maxSize = 20 * 1024 * 1024;
@@ -57,22 +57,27 @@ class TemplatesController extends Controller {
 	 *
 	 * @param string $appName
 	 * @param IRequest $request
-	 * @param L10N $l10n
+	 * @param IL10N $l10n
 	 * @param TemplateManager $manager
 	 * @param IPreview $preview
 	 */
 	public function __construct($appName,
-								IRequest $request,
-								IL10N $l10n,
-								TemplateManager $manager,
-								IPreview $preview) {
+		IRequest $request,
+		IL10N $l10n,
+		TemplateManager $manager,
+		IPreview $preview,
+		IMimeTypeDetector $mimeTypeDetector,
+		LoggerInterface $logger
+	) {
 		parent::__construct($appName, $request);
 
 		$this->appName = $appName;
 		$this->request = $request;
-		$this->l10n    = $l10n;
+		$this->l10n = $l10n;
 		$this->manager = $manager;
 		$this->preview = $preview;
+		$this->mimeTypeDetector = $mimeTypeDetector;
+		$this->logger = $logger;
 	}
 
 	/**
@@ -96,7 +101,6 @@ class TemplatesController extends Controller {
 		$a = false,
 		$forceIcon = true,
 		$mode = 'fill') {
-
 		if ($fileId === '' || $x === 0 || $y === 0) {
 			return new DataResponse([], Http::STATUS_BAD_REQUEST);
 		}
@@ -123,29 +127,36 @@ class TemplatesController extends Controller {
 		$files = $this->request->getUploadedFile('files');
 
 		if (!is_null($files)) {
-			if ($files['error'][0] === 0
-				&& is_uploaded_file($files['tmp_name'][0])
-				&& !Filesystem::isFileBlacklisted($files['tmp_name'][0])) {
+			$mimeType = !empty($files['type'] ?? '') ? $files['type'] : $this->mimeTypeDetector->detect($files['tmp_name']);
+			$error = $files['error'] ?? 0;
 
-				// TODO: ensure the size limit is decent for preview
-				if ($files['size'][0] > $this->maxSize) {
+			if ($error !== 0) {
+				$this->logger->error('Failed to get the uploaded file. PHP file upload error code: ' . $error);
+				return new JSONResponse(
+					['data' => ['message' => $this->l10n->t('Failed to upload the file')]],
+					Http::STATUS_BAD_REQUEST
+				);
+			}
+
+			if (is_uploaded_file($files['tmp_name']) && !Filesystem::isFileBlacklisted($files['tmp_name'])) {
+				if ($files['size'] > $this->maxSize) {
 					return new JSONResponse(
 						['data' => ['message' => $this->l10n->t('File is too big')]],
 						Http::STATUS_BAD_REQUEST
 					);
 				}
 
-				if (!$this->manager->isValidTemplateMime($files['type'][0])) {
+				if (!$this->manager->isValidTemplateMime($mimeType)) {
 					return new JSONResponse(
 						['data' => ['message' => $this->l10n->t('Only template files can be uploaded')]],
 						Http::STATUS_BAD_REQUEST
 					);
 				}
 
-				$templateName = $files['name'][0];
-				$templateFile = file_get_contents($files['tmp_name'][0]);
+				$templateName = $files['name'];
+				$templateFile = file_get_contents($files['tmp_name']);
 
-				unlink($files['tmp_name'][0]);
+				unlink($files['tmp_name']);
 
 				$template = $this->manager->add($templateName, $templateFile);
 
@@ -195,12 +206,11 @@ class TemplatesController extends Controller {
 	 */
 	private function fetchPreview(
 		Node $node,
-		$x,
-		$y,
-		$a = false,
-		$forceIcon = true,
-		string $mode): Http\Response {
-
+		int $x,
+		int $y,
+		bool $a = false,
+		bool $forceIcon = true,
+		string $mode = IPreview::MODE_FILL): Http\Response {
 		if (!($node instanceof Node) || (!$forceIcon && !$this->preview->isAvailable($node))) {
 			return new DataResponse([], Http::STATUS_NOT_FOUND);
 		}
@@ -209,7 +219,7 @@ class TemplatesController extends Controller {
 		}
 
 		try {
-			$f        = $this->preview->getPreview($node, $x, $y, !$a, $mode);
+			$f = $this->preview->getPreview($node, $x, $y, !$a, $mode);
 			$response = new FileDisplayResponse($f, Http::STATUS_OK, ['Content-Type' => $f->getMimeType()]);
 			$response->cacheFor(3600 * 24);
 

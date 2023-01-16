@@ -26,12 +26,12 @@ use OCA\Richdocuments\AppConfig;
 use OCA\Richdocuments\Db\Direct;
 use OCA\Richdocuments\Db\DirectMapper;
 use OCA\Richdocuments\Service\FederationService;
+use OCA\Richdocuments\Service\InitialStateService;
 use OCA\Richdocuments\TemplateManager;
 use OCA\Richdocuments\TokenManager;
 use OCP\AppFramework\Controller;
 use OCP\AppFramework\Db\DoesNotExistException;
 use OCP\AppFramework\Http;
-use OCP\AppFramework\Http\ContentSecurityPolicy;
 use OCP\AppFramework\Http\JSONResponse;
 use OCP\AppFramework\Http\RedirectResponse;
 use OCP\AppFramework\Http\TemplateResponse;
@@ -44,6 +44,8 @@ use OCP\ILogger;
 use OCP\IRequest;
 
 class DirectViewController extends Controller {
+	use DocumentTrait;
+
 	/** @var IRootFolder */
 	private $rootFolder;
 
@@ -68,12 +70,16 @@ class DirectViewController extends Controller {
 	/** @var ILogger */
 	private $logger;
 
+	/** @var InitialStateService */
+	private $initialState;
+
 	public function __construct(
 		$appName,
 		IRequest $request,
 		IRootFolder $rootFolder,
 		TokenManager $tokenManager,
 		DirectMapper $directMapper,
+		InitialStateService $initialState,
 		IConfig $config,
 		AppConfig $appConfig,
 		TemplateManager $templateManager,
@@ -85,6 +91,7 @@ class DirectViewController extends Controller {
 		$this->rootFolder = $rootFolder;
 		$this->tokenManager = $tokenManager;
 		$this->directMapper = $directMapper;
+		$this->initialState = $initialState;
 		$this->config = $config;
 		$this->appConfig = $appConfig;
 		$this->templateManager = $templateManager;
@@ -128,16 +135,17 @@ class DirectViewController extends Controller {
 
 			try {
 				list($urlSrc, $wopi) = $this->tokenManager->getTokenForTemplate($item, $direct->getUid(), $direct->getTemplateDestination(), true);
+
+				$targetFile = $folder->getById($direct->getTemplateDestination())[0];
+				$relativePath = $folder->getRelativePath($targetFile->getPath());
 			} catch (\Exception $e) {
+				$this->logger->error('Failed to generate token for new file on direct editing', ['exception' => $e]);
 				return new JSONResponse([], Http::STATUS_BAD_REQUEST);
 			}
-
-			$relativePath = '/new.odt';
-
 		} else {
 			try {
 				$item = $folder->getById($direct->getFileid())[0];
-				if(!($item instanceof Node)) {
+				if (!($item instanceof Node)) {
 					throw new \Exception();
 				}
 
@@ -151,7 +159,7 @@ class DirectViewController extends Controller {
 
 				list($urlSrc, $token, $wopi) = $this->tokenManager->getToken($item->getId(), null, $direct->getUid(), true);
 			} catch (\Exception $e) {
-				$this->logger->logException($e);
+				$this->logger->error('Failed to generate token for existing file on direct editing', ['exception' => $e]);
 				return $this->renderErrorPage('Failed to open the requested file.');
 			}
 
@@ -161,9 +169,10 @@ class DirectViewController extends Controller {
 		try {
 			$params = [
 				'permissions' => $item->getPermissions(),
-				'title' => $item->getName(),
+				'title' => basename($relativePath),
 				'fileId' => $wopi->getFileid() . '_' . $this->config->getSystemValue('instanceid'),
 				'token' => $wopi->getToken(),
+				'token_ttl' => $wopi->getExpiry(),
 				'urlsrc' => $urlSrc,
 				'path' => $relativePath,
 				'instanceId' => $this->config->getSystemValue('instanceid'),
@@ -171,17 +180,14 @@ class DirectViewController extends Controller {
 				'direct' => true,
 			];
 
+			$this->initialState->provideDocument($wopi);
 			$response = new TemplateResponse('richdocuments', 'documents', $params, 'base');
-			$policy = new ContentSecurityPolicy();
-			$policy->allowInlineScript(true);
-			$policy->addAllowedFrameDomain($this->appConfig->getAppValue('public_wopi_url'));
-			$response->setContentSecurityPolicy($policy);
+			$this->applyPolicies($response);
 			return $response;
 		} catch (\Exception $e) {
 			$this->logger->logException($e);
 			return  $this->renderErrorPage('Failed to open the requested file.');
 		}
-
 	}
 
 	public function showPublicShare(Direct $direct) {
@@ -224,22 +230,20 @@ class DirectViewController extends Controller {
 					$this->tokenManager->upgradeFromDirectInitiator($direct, $wopi);
 				}
 				$params['token'] = $token;
+				$params['token_ttl'] = $wopi->getExpiry();
 				$params['urlsrc'] = $urlSrc;
 
+				$this->initialState->provideDocument($wopi);
 				$response = new TemplateResponse('richdocuments', 'documents', $params, 'base');
-				$policy = new ContentSecurityPolicy();
-				$policy->allowInlineScript(true);
-				$policy->addAllowedFrameDomain($this->appConfig->getAppValue('public_wopi_url'));
-				$response->setContentSecurityPolicy($policy);
+				$this->applyPolicies($response);
 				return $response;
 			}
 		} catch (\Exception $e) {
-			$this->logger->logException($e, ['app'=>'richdocuments']);
-			$response = $this->renderErrorPage('Failed to open the requested file.');
+			$this->logger->logException($e, ['app' => 'richdocuments']);
+			return $this->renderErrorPage('Failed to open the requested file.');
 		}
 
 		return new TemplateResponse('core', '403', [], 'guest');
-
 	}
 
 	private function renderErrorPage($message) {

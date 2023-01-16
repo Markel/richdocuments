@@ -62,31 +62,30 @@ use OCP\AppFramework\Db\Entity;
  * @method static Wopi fromParams(array $params)
  */
 class Wopi extends Entity implements \JsonSerializable {
-
 	/**
 	 * WOPI token to open a file as a user on the current instance
 	 */
-	const TOKEN_TYPE_USER = 0;
+	public const TOKEN_TYPE_USER = 0;
 
 	/**
 	 * WOPI token to open a file as a guest on the current instance
 	 */
-	const TOKEN_TYPE_GUEST = 1;
+	public const TOKEN_TYPE_GUEST = 1;
 
 	/**
 	 * WOPI token to open a file as a user from a federated instance
 	 */
-	const TOKEN_TYPE_REMOTE_USER = 2;
+	public const TOKEN_TYPE_REMOTE_USER = 2;
 
 	/**
 	 * WOPI token to open a file as a guest from a federated instance
 	 */
-	const TOKEN_TYPE_REMOTE_GUEST = 3;
+	public const TOKEN_TYPE_REMOTE_GUEST = 3;
 
 	/*
 	 * Temporary token that is used to share the initiator details to the source instance
 	 */
-	const TOKEN_TYPE_INITIATOR = 4;
+	public const TOKEN_TYPE_INITIATOR = 4;
 
 	/** @var string */
 	protected $ownerUid;
@@ -140,18 +139,18 @@ class Wopi extends Entity implements \JsonSerializable {
 	protected $tokenType = 0;
 
 	public function __construct() {
-		$this->addType('owner_uid', 'string');
-		$this->addType('editor_uid', 'string');
+		$this->addType('ownerUid', 'string');
+		$this->addType('editorUid', 'string');
 		$this->addType('fileid', 'int');
 		$this->addType('version', 'int');
 		$this->addType('canwrite', 'bool');
-		$this->addType('server_host', 'string');
+		$this->addType('serverHost', 'string');
 		$this->addType('token', 'string');
 		$this->addType('expiry', 'int');
-		$this->addType('guest_displayname', 'string');
+		$this->addType('guestDisplayname', 'string');
 		$this->addType('templateDestination', 'int');
 		$this->addType('templateId', 'int');
-		$this->addType('hide_download', 'bool');
+		$this->addType('hideDownload', 'bool');
 		$this->addType('direct', 'bool');
 		$this->addType('tokenType', 'int');
 	}
@@ -187,6 +186,7 @@ class Wopi extends Entity implements \JsonSerializable {
 		return (bool)$this->direct;
 	}
 
+	#[\ReturnTypeWillChange]
 	public function jsonSerialize() {
 		$properties = get_object_vars($this);
 		$reflection = new \ReflectionClass($this);

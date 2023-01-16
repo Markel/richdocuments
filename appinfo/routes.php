@@ -30,11 +30,9 @@ return [
 		//documents
 		['name' => 'document#index', 'url' => 'index', 'verb' => 'GET'],
 		['name' => 'document#remote', 'url' => 'remote', 'verb' => 'GET'],
-		['name' => 'document#openRemoteFile', 'url' => 'open', 'verb' => 'GET'],
 
 		['name' => 'document#createFromTemplate', 'url' => 'indexTemplate', 'verb' => 'GET'],
 		['name' => 'document#publicPage', 'url' => '/public', 'verb' => 'GET'],
-		['name' => 'document#create', 'url' => 'ajax/documents/create', 'verb' => 'POST'],
 
 		// external api access
 		['name' => 'document#extAppGetData', 'url' => '/ajax/extapp/data/{fileId}', 'verb' => 'POST'],
@@ -43,7 +41,7 @@ return [
 		['name' => 'wopi#checkFileInfo', 'url' => 'wopi/files/{fileId}', 'verb' => 'GET'],
 		['name' => 'wopi#getFile', 'url' => 'wopi/files/{fileId}/contents', 'verb' => 'GET'],
 		['name' => 'wopi#putFile', 'url' => 'wopi/files/{fileId}/contents', 'verb' => 'POST'],
-		['name' => 'wopi#putRelativeFile', 'url' => 'wopi/files/{fileId}', 'verb' => 'POST'],
+		['name' => 'wopi#postFile', 'url' => 'wopi/files/{fileId}', 'verb' => 'POST'],
 		['name' => 'wopi#getTemplate', 'url' => 'wopi/template/{fileId}', 'verb' => 'GET'],
 
 		//settings
@@ -53,6 +51,12 @@ return [
 		['name' => 'settings#updateWatermarkSettings', 'url' => 'settings/watermark', 'verb' => 'POST'],
 		['name' => 'settings#checkSettings', 'url' => 'settings/check', 'verb' => 'GET'],
 		['name' => 'settings#demoServers', 'url' => 'settings/demo', 'verb' => 'GET'],
+		['name' => 'settings#getFontNames', 'url' => 'settings/fonts', 'verb' => 'GET'],
+		['name' => 'settings#getJsonFontList', 'url' => 'settings/fonts.json', 'verb' => 'GET'],
+		['name' => 'settings#getFontFile', 'url' => 'settings/fonts/{name}', 'verb' => 'GET'],
+		['name' => 'settings#getFontFileOverview', 'url' => 'settings/fonts/{name}/overview', 'verb' => 'GET'],
+		['name' => 'settings#deleteFontFile', 'url' => 'settings/fonts/{name}', 'verb' => 'DELETE'],
+		['name' => 'settings#uploadFontFile', 'url' => 'settings/fonts', 'verb' => 'POST'],
 
 		//Mobile access
 		['name' => 'directView#show', 'url' => '/direct/{token}', 'verb' => 'GET'],
@@ -67,6 +71,8 @@ return [
 		['name' => 'templates#delete', 'url' => '/template/{fileId}', 'verb' => 'DELETE'],
 	],
 	'ocs' => [
+		['name' => 'documentAPI#create', 'url' => '/api/v1/file', 'verb' => 'POST'],
+
 		['name' => 'OCS#createDirect', 'url' => '/api/v1/document', 'verb' => 'POST'],
 		['name' => 'OCS#createPublic', 'url' => '/api/v1/share', 'verb' => 'POST'],
 		['name' => 'OCS#createPublicFromInitiator', 'url' => '/api/v1/direct/share/initiator', 'verb' => 'POST'],

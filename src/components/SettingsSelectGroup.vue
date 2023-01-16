@@ -21,7 +21,7 @@
   -->
 
 <template>
-	<Multiselect v-model="inputValObjects"
+	<NcMultiselect v-model="inputValObjects"
 		:options="groupsArray"
 		:options-limit="5"
 		:placeholder="label"
@@ -35,18 +35,19 @@
 		@input="update"
 		@search-change="asyncFindGroup">
 		<span slot="noResult">{{ t('settings', 'No results') }}</span>
-	</Multiselect>
+	</NcMultiselect>
 </template>
 
 <script>
 import axios from '@nextcloud/axios'
-import Multiselect from '@nextcloud/vue/dist/Components/Multiselect'
+import { NcMultiselect } from '@nextcloud/vue'
+import { generateOcsUrl } from '@nextcloud/router'
 
 let uuid = 0
 export default {
 	name: 'SettingsSelectGroup',
 	components: {
-		Multiselect,
+		NcMultiselect,
 	},
 	props: {
 		label: {
@@ -111,7 +112,7 @@ export default {
 		},
 		asyncFindGroup(query) {
 			query = typeof query === 'string' ? encodeURI(query) : ''
-			return axios.get(OC.linkToOCS(`cloud/groups/details?search=${query}&limit=10`, 2))
+			return axios.get(generateOcsUrl(`cloud/groups/details?search=${query}&limit=10`, 2))
 				.then((response) => {
 					if (Object.keys(response.data.ocs.data.groups).length > 0) {
 						response.data.ocs.data.groups.forEach((element) => {

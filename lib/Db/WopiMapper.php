@@ -22,17 +22,18 @@
  */
 namespace OCA\Richdocuments\Db;
 
-use OCP\AppFramework\Db\DoesNotExistException;
-use OCP\AppFramework\Db\Mapper;
+use OCA\Richdocuments\AppConfig;
+use OCA\Richdocuments\Exceptions\ExpiredTokenException;
+use OCA\Richdocuments\Exceptions\UnknownTokenException;
+use OCP\AppFramework\Db\QBMapper;
 use OCP\AppFramework\Utility\ITimeFactory;
+use OCP\DB\QueryBuilder\IQueryBuilder;
 use OCP\IDBConnection;
 use OCP\ILogger;
 use OCP\Security\ISecureRandom;
 
-class WopiMapper extends Mapper {
-	// Tokens expire after this many seconds (not defined by WOPI specs).
-	const TOKEN_LIFETIME_SECONDS = 1800;
-
+/** @template-extends QBMapper<Wopi> */
+class WopiMapper extends QBMapper {
 	/** @var ISecureRandom */
 	private $random;
 
@@ -42,15 +43,20 @@ class WopiMapper extends Mapper {
 	/** @var ITimeFactory */
 	private $timeFactory;
 
+	/** @var AppConfig */
+	private $appConfig;
+
 	public function __construct(IDBConnection $db,
-								ISecureRandom $random,
-								ILogger $logger,
-								ITimeFactory $timeFactory) {
+		ISecureRandom $random,
+		ILogger $logger,
+		ITimeFactory $timeFactory,
+		AppConfig $appConfig) {
 		parent::__construct($db, 'richdocuments_wopi', Wopi::class);
 
 		$this->random = $random;
 		$this->logger = $logger;
 		$this->timeFactory = $timeFactory;
+		$this->appConfig = $appConfig;
 	}
 
 	/**
@@ -75,7 +81,7 @@ class WopiMapper extends Mapper {
 			'canwrite' => $updatable,
 			'serverHost' => $serverHost,
 			'token' => $token,
-			'expiry' => $this->timeFactory->getTime() + self::TOKEN_LIFETIME_SECONDS,
+			'expiry' => $this->calculateNewTokenExpiry(),
 			'guestDisplayname' => $guestDisplayname,
 			'templateDestination' => $templateDestination,
 			'hideDownload' => $hideDownload,
@@ -100,35 +106,37 @@ class WopiMapper extends Mapper {
 			'fileid' => 0,
 			'editorUid' => $uid,
 			'token' => $token,
-			'expiry' => $this->timeFactory->getTime() + self::TOKEN_LIFETIME_SECONDS,
+			'expiry' => $this->calculateNewTokenExpiry(),
 			'remoteServer' => $remoteServer,
 			'tokenType' => Wopi::TOKEN_TYPE_INITIATOR
 		]);
 
-		/** @var Wopi $wopi */
-		$wopi = $this->insert($wopi);
-
-		return $wopi;
+		return $this->insert($wopi);
 	}
 
 	/**
+	 *
 	 * @deprecated
 	 * @param $token
+	 * @return Wopi
+	 * @throws ExpiredTokenException
+	 * @throws UnknownTokenException
 	 */
 	public function getPathForToken($token) {
 		return $this->getWopiForToken($token);
 	}
+
 	/**
 	 * Given a token, validates it and
 	 * constructs and validates the path.
 	 * Returns the path, if valid, else false.
 	 *
 	 * @param string $token
-	 * @throws DoesNotExistException
 	 * @return Wopi
+	 * @throws UnknownTokenException
+	 * @throws ExpiredTokenException
 	 */
 	public function getWopiForToken($token) {
-
 		$qb = $this->db->getQueryBuilder();
 		$qb->select('*')
 			->from('richdocuments_wopi')
@@ -144,20 +152,42 @@ class WopiMapper extends Mapper {
 			'app' => 'richdocuments'
 		]);
 		if ($row === false) {
-			throw new DoesNotExistException('Could not find token.');
+			throw new UnknownTokenException('Could not find token.');
 		}
 
 		/** @var Wopi $wopi */
 		$wopi = Wopi::fromRow($row);
 
-		//TODO: validate.
-		if ($wopi->getExpiry() > $this->timeFactory->getTime()){
-			// Expired token!
-			//http_response_code(404);
-			//$wopi->deleteBy('id', $row['id']);
-			//return false;
+		if ($wopi->getExpiry() < $this->timeFactory->getTime()) {
+			throw new ExpiredTokenException('Provided token is expired.');
 		}
 
 		return $wopi;
+	}
+
+	/**
+	 * Calculates the expiry TTL for a newly created token.
+	 *
+	 * @return int
+	 */
+	private function calculateNewTokenExpiry(): int {
+		return $this->timeFactory->getTime() + (int) $this->appConfig->getAppValue('token_ttl');
+	}
+
+	/**
+	 * @param int|null $limit
+	 * @param int|null $offset
+	 * @return int[]
+	 * @throws \OCP\DB\Exception
+	 */
+	public function getExpiredTokenIds(?int $limit = null, ?int $offset = null): array {
+		$qb = $this->db->getQueryBuilder();
+		$qb->select('id')
+			->from('richdocuments_wopi')
+			->where($qb->expr()->lt('expiry', $qb->createNamedParameter(time() - 60, IQueryBuilder::PARAM_INT)))
+			->setFirstResult($offset)
+			->setMaxResults($limit);
+
+		return array_column($qb->executeQuery()->fetchAll(), 'id');
 	}
 }

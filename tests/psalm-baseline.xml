@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<files psalm-version="4.x-dev@">
+<files psalm-version="dev-master@">
   <file src="lib/AppConfig.php">
     <InvalidArgument occurrences="1">
       <code>[]</code>
@@ -15,20 +15,7 @@
     </RedundantCondition>
   </file>
   <file src="lib/AppInfo/Application.php">
-    <MissingDependency occurrences="18">
-      <code>$container</code>
-      <code>$container</code>
-      <code>$container</code>
-      <code>$container</code>
-      <code>$container</code>
-      <code>$container</code>
-      <code>$container</code>
-      <code>$container</code>
-      <code>$this-&gt;getContainer()</code>
-      <code>$this-&gt;getContainer()</code>
-      <code>$this-&gt;getContainer()</code>
-      <code>$this-&gt;getContainer()</code>
-      <code>$this-&gt;getContainer()</code>
+    <MissingDependency occurrences="5">
       <code>MSExcel</code>
       <code>MSWord</code>
       <code>OOXML</code>
@@ -37,19 +24,20 @@
     </MissingDependency>
   </file>
   <file src="lib/Command/ActivateConfig.php">
-    <UndefinedClass occurrences="1">
-      <code>Command</code>
-    </UndefinedClass>
+    <RedundantCondition occurrences="1">
+      <code>$public_wopi_url !== null</code>
+    </RedundantCondition>
   </file>
   <file src="lib/Command/ConvertToBigInt.php">
+    <MismatchingDocblockParamType occurrences="1">
+      <code>IDBConnection</code>
+    </MismatchingDocblockParamType>
     <UndefinedClass occurrences="1">
-      <code>Command</code>
+      <code>Type</code>
     </UndefinedClass>
-  </file>
-  <file src="lib/Command/UpdateEmptyTemplates.php">
-    <UndefinedClass occurrences="1">
-      <code>Command</code>
-    </UndefinedClass>
+    <UndefinedDocblockClass occurrences="1">
+      <code>$this-&gt;connection-&gt;getDatabasePlatform()</code>
+    </UndefinedDocblockClass>
   </file>
   <file src="lib/Controller/AssetsController.php">
     <MissingDependency occurrences="4">
@@ -58,9 +46,6 @@
       <code>IRootFolder</code>
       <code>IRootFolder</code>
     </MissingDependency>
-    <UndefinedThisPropertyFetch occurrences="1">
-      <code>$this-&gt;userScopeService</code>
-    </UndefinedThisPropertyFetch>
   </file>
   <file src="lib/Controller/DirectViewController.php">
     <InvalidScalarArgument occurrences="1">
@@ -72,51 +57,38 @@
       <code>IRootFolder</code>
     </MissingDependency>
   </file>
+  <file src="lib/Controller/DocumentAPIController.php">
+    <MissingDependency occurrences="1">
+      <code>IRootFolder</code>
+    </MissingDependency>
+    <UndefinedClass occurrences="1">
+      <code>\OCA\Files\Helper</code>
+    </UndefinedClass>
+  </file>
   <file src="lib/Controller/DocumentController.php">
-    <InvalidCatch occurrences="1"/>
-    <InvalidReturnStatement occurrences="1">
-      <code>new TemplateResponse('core', 'error', $params, 'guest')</code>
-    </InvalidReturnStatement>
-    <InvalidReturnType occurrences="1">
-      <code>array</code>
-    </InvalidReturnType>
-    <InvalidScalarArgument occurrences="5">
-      <code>$fileId</code>
+    <InvalidScalarArgument occurrences="4">
       <code>$item-&gt;getId()</code>
       <code>$item-&gt;getId()</code>
       <code>$item-&gt;getId()</code>
       <code>$node-&gt;getId()</code>
     </InvalidScalarArgument>
-    <MissingDependency occurrences="9">
+    <MissingDependency occurrences="5">
       <code>$this-&gt;rootFolder</code>
       <code>$this-&gt;rootFolder</code>
       <code>$this-&gt;rootFolder</code>
-      <code>$this-&gt;rootFolder</code>
-      <code>$this-&gt;rootFolder</code>
-      <code>BeforeFederationRedirectEvent</code>
       <code>IRootFolder</code>
       <code>IRootFolder</code>
-      <code>ShareNotFound</code>
     </MissingDependency>
     <RedundantCondition occurrences="1">
       <code>$app !== ''</code>
     </RedundantCondition>
-    <UndefinedClass occurrences="2">
-      <code>\OCA\Files_Sharing\External\Storage</code>
-      <code>\OC_Helper</code>
-    </UndefinedClass>
-    <UndefinedInterfaceMethod occurrences="1">
-      <code>getRemote</code>
-    </UndefinedInterfaceMethod>
   </file>
   <file src="lib/Controller/OCSController.php">
-    <InvalidCatch occurrences="1"/>
-    <MissingDependency occurrences="5">
+    <MissingDependency occurrences="4">
       <code>$this-&gt;rootFolder</code>
       <code>$this-&gt;rootFolder</code>
       <code>IRootFolder</code>
       <code>IRootFolder</code>
-      <code>ShareNotFound</code>
     </MissingDependency>
   </file>
   <file src="lib/Controller/SettingsController.php">
@@ -137,20 +109,9 @@
     <InvalidThrow occurrences="1">
       <code>NotFoundResponse</code>
     </InvalidThrow>
-    <MismatchingDocblockParamType occurrences="1">
-      <code>L10N</code>
-    </MismatchingDocblockParamType>
-    <TypeDoesNotContainType occurrences="1">
-      <code>!($node instanceof Node)</code>
-    </TypeDoesNotContainType>
-    <UndefinedDocblockClass occurrences="1">
-      <code>L10N</code>
-    </UndefinedDocblockClass>
   </file>
   <file src="lib/Controller/WopiController.php">
-    <MissingDependency occurrences="14">
-      <code>$this-&gt;rootFolder</code>
-      <code>$this-&gt;rootFolder</code>
+    <MissingDependency occurrences="11">
       <code>$this-&gt;rootFolder</code>
       <code>$this-&gt;rootFolder</code>
       <code>$this-&gt;rootFolder</code>
@@ -162,7 +123,6 @@
       <code>$this-&gt;rootFolder</code>
       <code>IRootFolder</code>
       <code>IRootFolder</code>
-      <code>ShareNotFound</code>
     </MissingDependency>
     <UndefinedClass occurrences="2">
       <code>\OC_User</code>
@@ -178,6 +138,11 @@
     <InvalidScalarArgument occurrences="1">
       <code>$time</code>
     </InvalidScalarArgument>
+  </file>
+  <file src="lib/PermissionManager.php">
+    <RedundantCondition occurrences="1">
+      <code>$share &amp;&amp; method_exists($share, 'getAttributes')</code>
+    </RedundantCondition>
   </file>
   <file src="lib/Preview/MSExcel.php">
     <MissingDependency occurrences="1">
@@ -211,10 +176,6 @@
     <UndefinedClass occurrences="1">
       <code>SharingExternalStorage</code>
     </UndefinedClass>
-    <UndefinedDocblockClass occurrences="2">
-      <code>$this-&gt;trustedServers</code>
-      <code>TrustedServers</code>
-    </UndefinedDocblockClass>
     <UndefinedInterfaceMethod occurrences="2">
       <code>getRemote</code>
       <code>getToken</code>
@@ -233,12 +194,6 @@
       <code>$this-&gt;userSession</code>
     </UndefinedThisPropertyFetch>
   </file>
-  <file src="lib/Settings/Personal.php">
-    <InvalidNullableReturnType occurrences="2">
-      <code>TemplateResponse</code>
-      <code>string</code>
-    </InvalidNullableReturnType>
-  </file>
   <file src="lib/Template/CollaboraTemplateProvider.php">
     <InvalidReturnStatement occurrences="1"/>
     <InvalidReturnType occurrences="1">
@@ -246,28 +201,24 @@
     </InvalidReturnType>
   </file>
   <file src="lib/TemplateManager.php">
-    <MissingDependency occurrences="5">
+    <MissingDependency occurrences="6">
+      <code>$this-&gt;rootFolder</code>
       <code>$this-&gt;rootFolder</code>
       <code>$this-&gt;rootFolder</code>
       <code>$this-&gt;rootFolder</code>
       <code>IRootFolder</code>
       <code>IRootFolder</code>
     </MissingDependency>
-    <UndefinedThisPropertyFetch occurrences="2">
-      <code>$this-&gt;appData</code>
-      <code>$this-&gt;appData</code>
-    </UndefinedThisPropertyFetch>
   </file>
   <file src="lib/TokenManager.php">
     <InvalidScalarArgument occurrences="1">
       <code>$node-&gt;getId()</code>
     </InvalidScalarArgument>
-    <MissingDependency occurrences="5">
+    <MissingDependency occurrences="4">
       <code>$this-&gt;rootFolder</code>
       <code>$this-&gt;rootFolder</code>
       <code>IRootFolder</code>
       <code>IRootFolder</code>
-      <code>ShareNotFound</code>
     </MissingDependency>
     <NullArgument occurrences="1">
       <code>null</code>

@@ -26,16 +26,13 @@ namespace OCA\RichDocuments\Command;
 
 use OCA\Richdocuments\AppConfig;
 use OCA\Richdocuments\Service\CapabilitiesService;
-use OCA\Richdocuments\TemplateManager;
 use OCA\Richdocuments\WOPI\DiscoveryManager;
 use OCA\Richdocuments\WOPI\Parser;
 use Symfony\Component\Console\Command\Command;
-use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
 class ActivateConfig extends Command {
-
 	/** @var AppConfig */
 	private $appConfig;
 
@@ -85,5 +82,4 @@ class ActivateConfig extends Command {
 			return 1;
 		}
 	}
-
 }

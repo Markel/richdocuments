@@ -133,7 +133,7 @@ class DirectContext implements Context {
 		if ($lastServer) {
 			$currentServer = parse_url($lastServer, PHP_URL_SCHEME) . '://'. parse_url($lastServer, PHP_URL_HOST)  . (
 				parse_url($lastServer, PHP_URL_PORT) ? ':' . parse_url($lastServer, PHP_URL_PORT) : ''
-				). '/';
+			). '/';
 		}
 		$contents = $response->getBody()->getContents();
 		$re = '/var richdocuments_([A-z]+) = (.*);/m';
@@ -212,5 +212,4 @@ class DirectContext implements Context {
 		}
 		$this->serverContext->sendOCSRequest('POST', 'apps/richdocuments/api/v1/share', $data, $options);
 	}
-
 }

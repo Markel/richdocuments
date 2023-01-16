@@ -27,7 +27,6 @@ use OCP\Http\Client\IClientService;
 use OCP\ICache;
 
 class DemoService {
-
 	/**
 	 * @var ICache
 	 */
@@ -58,5 +57,4 @@ class DemoService {
 		$this->cache->set('richdocuments-demo', json_encode($servers));
 		return $servers;
 	}
-
 }

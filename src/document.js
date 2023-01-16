@@ -1,29 +1,36 @@
 import { emit } from '@nextcloud/event-bus'
-import { getRootUrl } from '@nextcloud/router'
+import { generateOcsUrl, getRootUrl, imagePath } from '@nextcloud/router'
 import { getRequestToken } from '@nextcloud/auth'
 import Config from './services/config.tsx'
-import { setGuestName, shouldAskForGuestName } from './helpers/guestName'
+import { setGuestName, shouldAskForGuestName } from './helpers/guestName.js'
+import { getUIDefaults, generateCSSVarTokens, getCollaboraTheme } from './helpers/coolParameters.js'
+import { enableScrollLock } from './helpers/safariFixer.js'
 
 import PostMessageService from './services/postMessage.tsx'
 import {
 	callMobileMessage,
 	isDirectEditing,
 	isMobileInterfaceAvailable,
-} from './helpers/mobile'
-import { getWopiUrl, getSearchParam } from './helpers/url'
+} from './helpers/mobile.js'
+import { getWopiUrl, getSearchParam, getNextcloudUrl } from './helpers/url.js'
 
 import '../css/document.scss'
+import axios from '@nextcloud/axios'
 
 const PostMessages = new PostMessageService({
 	parent: window.parent,
 	loolframe: () => document.getElementById('loleafletframe').contentWindow,
 })
 
+if (isDirectEditing()) {
+	enableScrollLock()
+}
+
 let checkingProxyStatus = false
 
 const checkProxyStatus = () => {
 	checkingProxyStatus = true
-	const url = Config.get('urlsrc').substr(0, Config.get('urlsrc').indexOf('proxy.php') + 'proxy.php'.length)
+	const url = Config.get('urlsrc').slice(0, Config.get('urlsrc').indexOf('proxy.php') + 'proxy.php'.length)
 	$.get(url + '?status').done(function(val) {
 		if (val && val.status && val.status !== 'OK') {
 			if (val.status === 'starting' || val.status === 'stopped') {
@@ -81,44 +88,6 @@ const hideLoadingIndicator = () => {
 	document.getElementById('proxyLoadingMessage').textContent = ''
 }
 
-const generateCSSVarTokens = () => {
-	/* NC versus COOL */
-	const cssVarMap = {
-		'--color-primary-text': '--co-primary-text',
-		'--color-primary-element': '--co-primary-element:--co-text-accent',
-		'--color-primary-element-light': '--co-primary-element-light',
-		'--color-error': '--co-color-error',
-		'--color-warning': '--co-color-warning',
-		'--color-success': '--co-color-success',
-		'--border-radius': '--co-border-radius',
-		'--border-radius-large': '--co-border-radius-large',
-		'--color-loading-light': '--co-loading-light',
-		'--color-loading-dark': '--co-loading-dark',
-		'--color-box-shadow': '--co-box-shadow',
-		'--color-border': '--co-border',
-		'--color-border-dark': '--co-border-dark',
-		'--border-radius-pill': '--co-border-radius-pill',
-	}
-	let str = ''
-	try {
-		for (const cssVarKey in cssVarMap) {
-			let cStyle = window.parent.getComputedStyle(document.documentElement).getPropertyValue(cssVarKey)
-			if (!cStyle) {
-				// try suffix -dark instead
-				cStyle = window.parent.getComputedStyle(document.documentElement).getPropertyValue(cssVarKey + '-dark')
-			}
-			if (!cStyle) continue // skip if it is not set
-			const varNames = cssVarMap[cssVarKey].split(':')
-			for (let i = 0; i < varNames.length; ++i) {
-				str += varNames[i] + '=' + cStyle + ';'
-			}
-		}
-	} catch (e) {
-		// Skip extracting css vars if we cannot access parent
-	}
-	return str
-}
-
 showLoadingIndicator()
 
 $.widget('oc.guestNamePicker', {
@@ -160,19 +129,20 @@ $.widget('oc.guestNamePicker', {
 /**
  * Type definitions for WOPI Post message objects
  *
- * @typedef {Object} View
- * @property {Number} ViewId
+ * @typedef {object} View
+ * @property {number} ViewId
  * @property {string} UserName
  * @property {string} UserId
- * @property {Number} Color
- * @property {Boolean} ReadOnly
- * @property {Boolean} IsCurrentView
+ * @property {number} Color
+ * @property {boolean} ReadOnly
+ * @property {boolean} IsCurrentView
  */
 
 const documentsMain = {
 	isEditorMode: false,
 	isViewerMode: false,
 	isFrameReady: false,
+	isPublic: false,
 	ready: false,
 	fileName: null,
 	baseName: null,
@@ -181,6 +151,7 @@ const documentsMain = {
 	renderComplete: false, // false till page is rendered with all required data about the document(s)
 	$deferredVersionRestoreAck: null,
 	wopiClientFeatures: null,
+	users: [],
 
 	// generates docKey for given fileId
 	_generateDocKey(wopiFileId) {
@@ -213,22 +184,29 @@ const documentsMain = {
 				$('#revViewerContainer').prepend($('<div id="revViewer">'))
 			}
 
-			const urlsrc = getWopiUrl({ fileId, title, readOnly: true })
+			const urlsrc = getWopiUrl({ fileId, title, readOnly: true, closeButton: true })
 
-			// access_token - must be passed via a form post
+			// access_token & access_token_ttl - must be passed via a form post
 			const accessToken = encodeURIComponent(documentsMain.token)
+			const accessTokenTtl = encodeURIComponent(documentsMain.tokenTtl)
 
 			// form to post the access token for WOPISrc
 			const form = '<form id="loleafletform_viewer" name="loleafletform_viewer" target="loleafletframe_viewer" action="' + urlsrc + '" method="post">'
 				+ '<input name="access_token" value="' + accessToken + '" type="hidden"/>'
-				+ '<input name="ui_defaults" value="TextRuler=false;TextStatusbar=true;TextSidebar=false;PresentationSidebar=false;PresentationStatusbar=true;SpreadsheetSidebar=false" type="hidden"/>'
-				+ '<input name="css_variables" value="' + generateCSSVarTokens() + '" type="hidden"/></form>'
+				+ '<input name="access_token_ttl" value="' + accessTokenTtl + '" type="hidden"/>'
+				+ '<input name="ui_defaults" value="' + getUIDefaults() + '" type="hidden"/>'
+				+ '<input name="css_variables" value="' + generateCSSVarTokens() + '" type="hidden"/>'
+				+ '<input name="theme" value="' + getCollaboraTheme() + '" type="hidden"/>'
+				// buy product for new customer users
+				+ '<input name="buy_product" value="https://nextcloud.com/pricing" type="hidden"/>'
+				+ '</form>'
 
 			// iframe that contains the Collabora Online Viewer
 			const frame = '<iframe id="loleafletframe_viewer" name="loleafletframe_viewer" allowfullscreen nonce="' + btoa(getRequestToken()) + '" style="width:100%;height:100%;position:absolute;"/>'
 
 			$('#revViewer').append(form)
 			$('#revViewer').append(frame)
+			$('#loleafletframe_viewer').focus()
 
 			// submit that
 			$('#loleafletform_viewer').submit()
@@ -266,22 +244,29 @@ const documentsMain = {
 			$(document.body).addClass('claro')
 			$(document.body).prepend(documentsMain.UI.container)
 
-			const urlsrc = getWopiUrl({ fileId, title, readOnly: false, closeButton: true, revisionHistory: !!Config.get('userId') })
+			const urlsrc = getWopiUrl({ fileId, title, readOnly: false, closeButton: true, revisionHistory: !documentsMain.isPublic })
 
 			// access_token - must be passed via a form post
 			const accessToken = encodeURIComponent(documentsMain.token)
+			const accessTokenTtl = encodeURIComponent(documentsMain.tokenTtl)
 
 			// form to post the access token for WOPISrc
 			const form = '<form id="loleafletform" name="loleafletform" target="loleafletframe" action="' + urlsrc + '" method="post">'
 				+ '<input name="access_token" value="' + accessToken + '" type="hidden"/>'
-				+ '<input name="ui_defaults" value="TextRuler=false;TextStatusbar=true;TextSidebar=false;PresentationSidebar=false;PresentationStatusbar=true;SpreadsheetSidebar=false" type="hidden"/>'
-				+ '<input name="css_variables" value="' + generateCSSVarTokens() + '" type="hidden"/></form>'
+				+ '<input name="access_token_ttl" value="' + accessTokenTtl + '" type="hidden"/>'
+				+ '<input name="ui_defaults" value="' + getUIDefaults() + '" type="hidden"/>'
+				+ '<input name="css_variables" value="' + generateCSSVarTokens() + '" type="hidden"/>'
+				+ '<input name="theme" value="' + getCollaboraTheme() + '" type="hidden"/>'
+				// buy product for new customer users
+				+ '<input name="buy_product" value="https://nextcloud.com/pricing" type="hidden"/>'
+				+ '</form>'
 
 			// iframe that contains the Collabora Online
 			const frame = '<iframe id="loleafletframe" name="loleafletframe" nonce="' + btoa(getRequestToken()) + '" scrolling="no" allowfullscreen style="width:100%;height:100%;position:absolute;" />'
 
 			$('#mainContainer').append(form)
 			$('#mainContainer').append(frame)
+			$('#loleafletframe').focus()
 
 			emit('richdocuments:wopi-load:started', {
 				wopiFileId: fileId,
@@ -333,6 +318,17 @@ const documentsMain = {
 
 						if (Config.get('userId') === null) {
 							PostMessages.sendWOPIPostMessage('loolframe', 'Hide_Menu_Item', { id: 'insertgraphicremote' })
+						}
+
+						if (Config.get('userId') !== null && !Config.get('isPublicShare')) {
+							PostMessages.sendWOPIPostMessage('loolframe', 'Insert_Button', {
+								id: 'Open_Local_Editor',
+								imgurl: window.location.protocol + '//' + getNextcloudUrl() + imagePath('richdocuments', 'launch.svg'),
+								mobile: false,
+								label: t('richdocuments', 'Open in local editor'),
+								hint: t('richdocuments', 'Open in local editor'),
+								insertBefore: 'print',
+							})
 						}
 
 						emit('richdocuments:wopi-load:succeeded', {
@@ -468,6 +464,34 @@ const documentsMain = {
 					case 'File_Rename':
 						documentsMain.fileName = args.NewName
 						break
+					case 'Clicked_Button':
+						if (parsed.args.Id === 'Open_Local_Editor') {
+							documentsMain.UI.initiateOpenLocally()
+						} else {
+							console.debug('[document] Unhandled `Clicked_Button` post message', parsed)
+						}
+						break
+					case 'Views_List':
+						documentsMain.users = []
+						parsed.args.forEach((view) => {
+							if (!view.UserId.startsWith('Guest-')) {
+								documentsMain.users.push({ id: view.UserId, label: view.UserName })
+							}
+						})
+						break
+					case 'Get_Views_Resp':
+						if (documentsMain.openingLocally) {
+							documentsMain.UI.removeViews(parsed.args)
+							documentsMain.unlockFile()
+								.catch(_ => {}) // Unlocking failed, possibly because file was not locked, we want to proceed regardless.
+								.then(() => {
+									documentsMain.openLocally()
+								})
+						}
+						break
+					case 'UI_Mention':
+						documentsMain.sendUserList(parsed.args.text)
+						break
 					default:
 						console.debug('[document] Unhandled post message', parsed)
 					}
@@ -493,7 +517,7 @@ const documentsMain = {
 							const nameInput = $dialog.find('input')[0]
 							nameInput.style.minWidth = '250px'
 							nameInput.style.maxWidth = '400px'
-							nameInput.value = documentsMain.fileName
+							nameInput.value = args.format ? documentsMain.fileName.substring(0, documentsMain.fileName.lastIndexOf('.') + 1) + args.format : documentsMain.fileName
 							nameInput.selectionStart = 0
 							nameInput.selectionEnd = documentsMain.fileName.lastIndexOf('.')
 						})
@@ -526,6 +550,102 @@ const documentsMain = {
 				$(document.body).removeClass('claro')
 			})
 		},
+
+		initiateOpenLocally() {
+			OC.dialogs.confirmDestructive(
+				t('richdocuments', 'When opening a file locally, the document will close for all users currently viewing the document.'),
+				t('richdocuments', 'Open file locally'),
+				{
+					type: OC.dialogs.YES_NO_BUTTONS,
+					confirm: t('richdocuments', 'Open locally'),
+					confirmClasses: 'error',
+					cancel: t('richdocuments', 'Continue editing online'),
+				},
+				(decision) => {
+					if (!decision) {
+						return
+					}
+					documentsMain.openingLocally = true
+					PostMessages.sendWOPIPostMessage('loolframe', 'Get_Views')
+				}
+			)
+		},
+
+		removeViews(views) {
+			PostMessages.sendWOPIPostMessage('loolframe', 'Action_Save', {
+				DontTerminateEdit: false,
+				DontSaveIfUnmodified: false,
+				Notify: false,
+			})
+
+			views.forEach((view) => {
+				PostMessages.sendWOPIPostMessage('loolframe', 'Action_RemoveView', { ViewId: Number(view.ViewId) })
+			})
+		},
+	},
+
+	unlockFile() {
+		const unlockUrl = getRootUrl() + '/index.php/apps/richdocuments/wopi/files/' + documentsMain.fileId
+		const unlockConfig = {
+			headers: { 'X-WOPI-Override': 'UNLOCK' },
+		}
+		return axios.post(unlockUrl, { access_token: documentsMain.token }, unlockConfig)
+	},
+
+	openLocally() {
+		if (documentsMain.openingLocally) {
+			documentsMain.openingLocally = false
+
+			axios.post(
+				OC.linkToOCS('apps/files/api/v1', 2) + 'openlocaleditor?format=json',
+				{ path: documentsMain.fullPath }
+			).then((result) => {
+				const url = 'nc://open/'
+					+ Config.get('userId') + '@' + getNextcloudUrl()
+					+ OC.encodePath(documentsMain.fullPath)
+					+ '?token=' + result.data.ocs.data.token
+
+				this.showOpenLocalConfirmation(url, window.top)
+				window.location.href = url
+			})
+		}
+	},
+
+	showOpenLocalConfirmation(url, _window) {
+		_window.OC.dialogs.confirmDestructive(
+			t('richdocuments', 'If the file does not open in your local editor, make sure the Nextcloud desktop app is installed and open and try again.'),
+			t('richdocuments', 'Opening file locally …'),
+			{
+				type: OC.dialogs.YES_NO_BUTTONS,
+				confirm: t('richdocuments', 'Try again'),
+				cancel: t('richdocuments', 'Close'),
+			},
+			(decision) => {
+				if (decision) {
+					_window.location = url
+					this.showOpenLocalConfirmation(url, _window)
+				}
+			}
+		)
+	},
+
+	async sendUserList(search) {
+		let users = documentsMain.users
+
+		if (Config.get('userId') !== null) {
+			try {
+				const result = await axios.get(generateOcsUrl('core/autocomplete/get'), {
+					params: { search },
+				})
+				users = result.data.ocs.data
+			} catch (e) { }
+		}
+
+		const list = users.map((user) => {
+			const profile = window.location.protocol + '//' + getNextcloudUrl() + '/index.php/u/' + user.id
+			return { username: user.label, profile }
+		})
+		PostMessages.sendWOPIPostMessage('loolframe', 'Action_Mention', { list })
 	},
 
 	onStartup() {
@@ -541,13 +661,17 @@ const documentsMain = {
 	},
 
 	initSession() {
+		PostMessages.sendPostMessage('parent', 'loading')
+
 		documentsMain.urlsrc = Config.get('urlsrc')
 		documentsMain.fullPath = Config.get('path')
 		documentsMain.token = Config.get('token')
+		documentsMain.tokenTtl = Config.get('token_ttl') * 1000
 		documentsMain.fileId = Config.get('fileId')
 		documentsMain.fileName = Config.get('title')
 		documentsMain.canEdit = Boolean(Config.get('permissions') & OC.PERMISSION_UPDATE)
 		documentsMain.canShare = typeof OC.Share !== 'undefined' && Config.get('permissions') & OC.PERMISSION_SHARE
+		documentsMain.isPublic = !Config.get('userId')
 
 		$('footer,nav').hide()
 		// fade out file list and show the document
@@ -582,6 +706,7 @@ const documentsMain = {
 
 		$('footer,nav').show()
 		documentsMain.UI.hideEditor()
+		documentsMain.openLocally()
 
 		PostMessages.sendPostMessage('parent', 'close', '*')
 	},
@@ -642,7 +767,7 @@ $(document).ready(function() {
 	OCA.RichDocuments.documentsMain = documentsMain
 
 	if (shouldAskForGuestName()) {
-		PostMessages.sendPostMessage('parent', 'loading')
+		PostMessages.sendPostMessage('parent', 'NC_ShowNamePicker')
 		$('#documents-content').guestNamePicker()
 	} else {
 		documentsMain.initSession()

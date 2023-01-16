@@ -22,38 +22,81 @@
 
 <template>
 	<transition name="fade" appear>
-		<div v-show="loading" id="richdocuments-wrapper">
-			<div class="header">
-				<!-- This is obviously not the way to go since it would require absolute positioning and therefore not be compatible with viewer actions/sidebar -->
+		<div class="office-viewer">
+			<div v-if="showLoadingIndicator"
+				id="office-viewer__loading-overlay"
+				:class="{ debug: debug }">
+				<NcEmptyContent v-if="!error" icon="icon-loading">
+					{{ t('richdocuments', 'Loading {filename} …', { filename: basename }, 1, {escape: false}) }}
+					<template #desc>
+						<button @click="close">
+							{{ t('richdocuments', 'Cancel') }}
+						</button>
+					</template>
+				</NcEmptyContent>
+				<NcEmptyContent v-else icon="icon-error">
+					{{ t('richdocuments', 'Document loading failed') }}
+					<template #desc>
+						{{ errorMessage }}<br><br>
+						<button @click="close">
+							{{ t('richdocuments', 'Close') }}
+						</button>
+					</template>
+				</NcEmptyContent>
+			</div>
+			<div v-show="!useNativeHeader && showIframe" class="office-viewer__header">
 				<div class="avatars">
-					<Avatar v-for="view in avatarViews"
+					<NcAvatar v-for="view in avatarViews"
 						:key="view.ViewId"
 						:user="view.UserId"
 						:display-name="view.UserName"
+						:show-user-status="false"
+						:show-user-status-compact="false"
 						:style="viewColor(view)" />
 				</div>
+				<NcActions>
+					<NcActionButton icon="office-viewer__header__icon-menu-sidebar" @click="share" />
+				</NcActions>
 			</div>
-			<iframe id="collaboraframe" ref="documentFrame" :src="src" />
+			<iframe id="collaboraframe"
+				ref="documentFrame"
+				class="office-viewer__iframe"
+				:style="{visibility: showIframe ? 'visible' : 'hidden' }"
+				:src="src" />
 		</div>
 	</transition>
 </template>
 
 <script>
-import Avatar from '@nextcloud/vue/dist/Components/Avatar'
+import { NcAvatar, NcActions, NcActionButton, NcEmptyContent } from '@nextcloud/vue'
+import { loadState } from '@nextcloud/initial-state'
 
-import { getDocumentUrlForFile } from '../helpers/url'
+import { basename, dirname } from 'path'
+import { getDocumentUrlForFile, getDocumentUrlForPublicFile } from '../helpers/url.js'
 import PostMessageService from '../services/postMessage.tsx'
-import FilesAppIntegration from './FilesAppIntegration'
+import FilesAppIntegration from './FilesAppIntegration.js'
+import { LOADING_ERROR, checkCollaboraConfiguration, checkProxyStatus } from '../services/collabora.js'
+import { enableScrollLock, disableScrollLock } from '../helpers/safariFixer.js'
 
 const FRAME_DOCUMENT = 'FRAME_DOCUMENT'
 const PostMessages = new PostMessageService({
 	FRAME_DOCUMENT: () => document.getElementById('collaboraframe').contentWindow,
 })
 
+const LOADING_STATE = {
+	LOADING: 0,
+	FRAME_READY: 1,
+	DOCUMENT_READY: 2,
+	FAILED: -1,
+}
+
 export default {
 	name: 'Office',
 	components: {
-		Avatar,
+		NcAvatar,
+		NcActions,
+		NcActionButton,
+		NcEmptyContent,
 	},
 	props: {
 		filename: {
@@ -73,33 +116,141 @@ export default {
 	data() {
 		return {
 			src: null,
-			loading: false,
+			loading: LOADING_STATE.LOADING,
+			loadingTimeout: null,
+			error: null,
 			views: [],
 		}
 	},
 	computed: {
+		basename() {
+			return basename(this.filename)
+		},
+		useNativeHeader() {
+			return true
+		},
 		avatarViews() {
 			return this.views
 		},
 		viewColor() {
 			return view => ({
-				'border-color': '#' + ('000000' + Number(view.Color).toString(16)).substr(-6),
+				'border-color': '#' + ('000000' + Number(view.Color).toString(16)).slice(-6),
 				'border-width': '2px',
 				'border-style': 'solid',
 			})
 		},
+		showIframe() {
+			return this.loading >= LOADING_STATE.FRAME_READY
+		},
+		showLoadingIndicator() {
+			return this.loading < LOADING_STATE.FRAME_READY
+		},
+		errorMessage() {
+			switch (parseInt(this.error)) {
+			case LOADING_ERROR.COLLABORA_UNCONFIGURED:
+				return t('richdocuments', '{productName} is not configured', { productName: loadState('richdocuments', 'productName', 'Nextcloud Office') })
+			case LOADING_ERROR.PROXY_FAILED:
+				return t('richdocuments', 'Starting the built-in CODE server failed')
+			default:
+				return this.error
+			}
+		},
+		debug() {
+			return !!window.TESTING
+		},
 	},
-	mounted() {
-		PostMessages.registerPostMessageHandler(({ parsed }) => {
+	async mounted() {
+		try {
+			await checkCollaboraConfiguration()
+			await checkProxyStatus()
+		} catch (e) {
+			this.error = e.message
+			this.loading = LOADING_STATE.FAILED
+			return
+		}
+
+		const fileList = OCA?.Files?.App?.getCurrentFileList?.()
+		FilesAppIntegration.init({
+			fileName: basename(this.filename),
+			fileId: this.fileid,
+			filePath: dirname(this.filename),
+			fileList,
+			fileModel: fileList?.getModelForFile(basename(this.filename)),
+			sendPostMessage: (msgId, values) => {
+				PostMessages.sendWOPIPostMessage(FRAME_DOCUMENT, msgId, values)
+			},
+		})
+		PostMessages.registerPostMessageHandler(this.postMessageHandler)
+		this.load()
+	},
+	beforeDestroy() {
+		PostMessages.unregisterPostMessageHandler(this.postMessageHandler)
+	},
+	methods: {
+		async load() {
+			enableScrollLock()
+			const isPublic = document.getElementById('isPublic') && document.getElementById('isPublic').value === '1'
+			this.src = getDocumentUrlForFile(this.filename, this.fileid) + '&path=' + encodeURIComponent(this.filename)
+			if (isPublic) {
+				this.src = getDocumentUrlForPublicFile(this.filename, this.fileid)
+			}
+			this.loading = LOADING_STATE.LOADING
+			this.loadingTimeout = setTimeout(() => {
+				console.error('FAILED')
+				this.loading = LOADING_STATE.FAILED
+				this.error = t('richdocuments', 'Failed to load {productName} - please try again later', { productName: loadState('richdocuments', 'productName', 'Nextcloud Office') })
+			}, (OC.getCapabilities().richdocuments.config.timeout * 1000 || 15000))
+		},
+		documentReady() {
+			this.loading = LOADING_STATE.DOCUMENT_READY
+			clearTimeout(this.loadingTimeout)
+		},
+		async share() {
+			FilesAppIntegration.share()
+		},
+		close() {
+			disableScrollLock()
+			this.$parent.close()
+		},
+		postMessageHandler({ parsed, data }) {
+			if (data === 'NC_ShowNamePicker') {
+				this.documentReady()
+				return
+			} else if (data === 'loading') {
+				this.loading = LOADING_STATE.LOADING
+				return
+			}
 			console.debug('[viewer] Received post message', parsed)
 			const { msgId, args, deprecated } = parsed
 			if (deprecated) { return }
 
 			switch (msgId) {
+			case 'App_LoadingStatus':
+				if (args.Status === 'Frame_Ready') {
+					// defer showing the frame until collabora has finished also loading the document
+					this.loading = LOADING_STATE.FRAME_READY
+					this.$emit('update:loaded', true)
+					FilesAppIntegration.initAfterReady()
+				}
+				if (args.Status === 'Document_Loaded') {
+					this.documentReady()
+				} else if (args.Status === 'Failed') {
+					this.loading = LOADING_STATE.FAILED
+					this.$emit('update:loaded', true)
+				}
+				break
+			case 'Action_Load_Resp':
+				if (args.success) {
+					this.documentReady()
+				} else {
+					this.error = args.errorMsg
+					this.loading = LOADING_STATE.FAILED
+				}
+				break
 			case 'loading':
 				break
 			case 'close':
-				this.$parent.close()
+				this.close()
 				break
 			case 'Get_Views_Resp':
 			case 'Views_List':
@@ -110,62 +261,104 @@ export default {
 					PostMessages.sendWOPIPostMessage(FRAME_DOCUMENT, 'postAsset', { FileName: filename, Url: url })
 				})
 				break
+			case 'UI_CreateFile':
+				FilesAppIntegration.createNewFile(args.DocumentType)
+				break
+			case 'File_Rename':
+				FilesAppIntegration.rename(args.NewName)
+				break
+			case 'UI_FileVersions':
+			case 'rev-history':
+				FilesAppIntegration.showRevHistory()
+				break
+			case 'App_VersionRestore':
+				if (args.Status === 'Pre_Restore_Ack') {
+					FilesAppIntegration.restoreVersionExecute()
+				}
+				break
+			case 'UI_Share':
+				this.share()
+				break
 			}
-		})
-		this.load()
-	},
-	methods: {
-		async load() {
-			const documentUrl = getDocumentUrlForFile(this.filename, this.fileid) + '&path=' + this.filename
-			this.$emit('update:loaded', true)
-			this.src = documentUrl
-			this.loading = true
 		},
 	},
 }
 </script>
-<style lang="scss">
-	.header {
+<style lang="scss" scoped>
+.office-viewer {
+	width: 100%;
+	height: 100%;
+	top: 0;
+	left: 0;
+	position: absolute;
+	z-index: 100000;
+	max-width: 100%;
+	display: flex;
+	flex-direction: column;
+	background-color: var(--color-main-background);
+	transition: opacity .25s;
+
+	&__loading-overlay {
+		border-top: 3px solid var(--color-primary-element);
 		position: absolute;
-		right: 100px;
-		top: -50px;
+		height: 100%;
+		width: 100%;
+		z-index: 1;
+		top: 0;
+		left: 0;
+		background-color: #fff;
+		&.debug {
+			opacity: .5;
+		}
 
-		.avatars {
-			display: flex;
-			padding: 9px;
-
-			.avatardiv {
-				margin-left: -15px;
-				box-shadow: 0 0 3px var(--color-box-shadow);
-			}
-
+		::v-deep .empty-content p {
+			text-align: center;
 		}
 	}
 
-	#richdocuments-wrapper {
-		width: 100vw;
-		height: calc(100vh - 50px);
-		top: 50px;
-		left: 0;
+	&__header {
 		position: absolute;
-		z-index: 100000;
-		max-width: 100%;
+		right: 44px;
+		top: 3px;
+		z-index: 99999;
 		display: flex;
-		flex-direction: column;
-		background-color: var(--color-main-background);
-		transition: opacity .25s;
+		background-color: #fff;
+
+		.avatars {
+			display: flex;
+			padding: 4px;
+
+			::v-deep .avatardiv {
+				margin-left: -15px;
+				box-shadow: 0 0 3px var(--color-box-shadow);
+			}
+		}
+
+		&__icon-menu-sidebar {
+			background-image: var(--icon-menu-sidebar-000) !important;
+		}
 	}
 
-	iframe {
+	&__iframe {
 		width: 100%;
 		flex-grow: 1;
 	}
 
-	.fade-enter-active, .fade-leave-active {
+	::v-deep .fade-enter-active,
+	::v-deep .fade-leave-active {
 		transition: opacity .25s;
 	}
 
-	.fade-enter, .fade-leave-to {
+	::v-deep .fade-enter,
+	::v-deep .fade-leave-to {
 		opacity: 0;
 	}
+}
+</style>
+
+<style lang="scss">
+.viewer .office-viewer {
+	height: 100vh;
+	top: -50px;
+}
 </style>

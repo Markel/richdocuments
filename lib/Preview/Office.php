@@ -21,8 +21,6 @@
  */
 namespace OCA\Richdocuments\Preview;
 
-use GuzzleHttp\Psr7\LimitStream;
-use function GuzzleHttp\Psr7\stream_for;
 use OC\Preview\Provider;
 use OCA\Richdocuments\Capabilities;
 use OCP\Http\Client\IClientService;
@@ -31,7 +29,6 @@ use OCP\ILogger;
 use OCP\Image;
 
 abstract class Office extends Provider {
-
 	/** @var IClientService */
 	private $clientService;
 
@@ -45,9 +42,10 @@ abstract class Office extends Provider {
 	private $logger;
 
 	public function __construct(IClientService $clientService, IConfig $config, Capabilities $capabilities, ILogger $logger) {
+		parent::__construct();
 		$this->clientService = $clientService;
 		$this->config = $config;
-		$this->capabilitites = $capabilities->getCapabilities()['richdocuments'];
+		$this->capabilitites = $capabilities->getCapabilities()['richdocuments'] ?? [];
 		$this->logger = $logger;
 	}
 
@@ -80,7 +78,7 @@ abstract class Office extends Provider {
 		}
 
 		$client = $this->clientService->newClient();
-		$options = ['timeout' => 10];
+		$options = ['timeout' => 25];
 
 		if ($this->config->getAppValue('richdocuments', 'disable_certificate_verification') === 'yes') {
 			$options['verify'] = false;
@@ -107,7 +105,5 @@ abstract class Office extends Provider {
 			return $image;
 		}
 		return false;
-
 	}
-
 }
